@@ -1,0 +1,33 @@
+# Build artifacts
+/build/
+/install/
+*.obj
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.dll
+*.exe
+
+# vcpkg
+/vcpkg_installed/
+/build*/vcpkg_installed/
+
+# IDE
+/.vs/
+/.vscode/
+*.user
+*.suo
+*.tmp
+CMakeUserPresets.json
+
+# OS junk
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# Generated UI cache busts (don't commit personal hotkeys.json — that lives
+# in the player's Data/SKSE/Plugins/HotkeyPanel/ folder, never the repo)
+*.bak
+*.tmp
+hotkeys.json

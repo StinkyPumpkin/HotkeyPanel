@@ -1,0 +1,175 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Hotkey Panel — Nexus banner (1280x720)
+  Skyrim aesthetic: deep near-black background, gold accents, EB Garamond
+  serif title, corner diamonds, central highlighted key with surrounding row.
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 1280 720"
+     width="1280" height="720"
+     font-family="'EB Garamond','Palatino Linotype',Georgia,serif">
+
+  <defs>
+    <radialGradient id="bgGrad" cx="50%" cy="55%" r="80%">
+      <stop offset="0%"  stop-color="#1a1828"/>
+      <stop offset="55%" stop-color="#0c0a14"/>
+      <stop offset="100%" stop-color="#050407"/>
+    </radialGradient>
+    <linearGradient id="goldGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#f4d98a"/>
+      <stop offset="48%" stop-color="#d6b35a"/>
+      <stop offset="100%" stop-color="#8a6c2e"/>
+    </linearGradient>
+    <linearGradient id="keyGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#3a3850"/>
+      <stop offset="100%" stop-color="#181624"/>
+    </linearGradient>
+    <linearGradient id="keyHotGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"  stop-color="#ffe9a0"/>
+      <stop offset="50%" stop-color="#e6c060"/>
+      <stop offset="100%" stop-color="#a37820"/>
+    </linearGradient>
+
+    <!-- Soft halo behind the highlighted key -->
+    <radialGradient id="hotHalo" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"   stop-color="#f4d98a" stop-opacity="0.55"/>
+      <stop offset="60%"  stop-color="#c9a961" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#c9a961" stop-opacity="0"/>
+    </radialGradient>
+
+    <filter id="titleGlow" x="-20%" y="-50%" width="140%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1280" height="720" fill="url(#bgGrad)"/>
+
+  <!-- Frame -->
+  <rect x="14" y="14" width="1252" height="692"
+        fill="none" stroke="url(#goldGrad)" stroke-width="2" opacity="0.9"/>
+  <rect x="22" y="22" width="1236" height="676"
+        fill="none" stroke="#c9a961" stroke-width="0.5" opacity="0.35"/>
+
+  <!-- Corner diamonds -->
+  <g fill="#c9a961">
+    <rect x="40" y="40" width="14" height="14" transform="rotate(45 47 47)"/>
+    <rect x="1226" y="40" width="14" height="14" transform="rotate(45 1233 47)"/>
+    <rect x="40" y="666" width="14" height="14" transform="rotate(45 47 673)"/>
+    <rect x="1226" y="666" width="14" height="14" transform="rotate(45 1233 673)"/>
+  </g>
+
+  <!-- Title -->
+  <g filter="url(#titleGlow)">
+    <text x="640" y="180"
+          text-anchor="middle"
+          font-size="100" font-weight="600"
+          letter-spacing="14"
+          fill="url(#goldGrad)">HOTKEY PANEL</text>
+  </g>
+
+  <!-- Tagline -->
+  <text x="640" y="225"
+        text-anchor="middle"
+        font-size="22" letter-spacing="6"
+        fill="#c9a961" opacity="0.8">
+    A VISUAL REMINDER FOR EVERY KEY YOU BIND
+  </text>
+  <line x1="280" y1="219" x2="380" y2="219" stroke="#c9a961" stroke-width="1" opacity="0.5"/>
+  <line x1="900" y1="219" x2="1000" y2="219" stroke="#c9a961" stroke-width="1" opacity="0.5"/>
+
+  <!-- =========================================================
+       KEY ROW — 7 keys, F11 highlighted in center
+       7 keys × 110 + 6 × 18 = 878. Centered on x=640 → start x=201.
+       Top y = 320, key size 110×110.
+       ========================================================= -->
+
+  <!-- Halo behind F11 (drawn before keys so it's underneath, visible around) -->
+  <ellipse cx="640" cy="375" rx="180" ry="120" fill="url(#hotHalo)"/>
+
+  <!-- Inactive keys -->
+  <g>
+    <!-- Key 1: Esc @ x=201 -->
+    <rect x="201" y="320" width="110" height="110" rx="8"
+          fill="url(#keyGrad)" stroke="#5a5470" stroke-width="2"/>
+    <rect x="206" y="325" width="100" height="48" rx="6" fill="#ffffff" fill-opacity="0.06"/>
+    <text x="256" y="398" text-anchor="middle" font-size="38"
+          fill="#c4b08a" letter-spacing="1">Esc</text>
+
+    <!-- Key 2: Q @ x=329 -->
+    <rect x="329" y="320" width="110" height="110" rx="8"
+          fill="url(#keyGrad)" stroke="#5a5470" stroke-width="2"/>
+    <rect x="334" y="325" width="100" height="48" rx="6" fill="#ffffff" fill-opacity="0.06"/>
+    <text x="384" y="398" text-anchor="middle" font-size="44"
+          fill="#c4b08a" letter-spacing="1">Q</text>
+
+    <!-- Key 3: W @ x=457 -->
+    <rect x="457" y="320" width="110" height="110" rx="8"
+          fill="url(#keyGrad)" stroke="#5a5470" stroke-width="2"/>
+    <rect x="462" y="325" width="100" height="48" rx="6" fill="#ffffff" fill-opacity="0.06"/>
+    <text x="512" y="398" text-anchor="middle" font-size="44"
+          fill="#c4b08a" letter-spacing="1">W</text>
+
+    <!-- Key 5: E @ x=713 -->
+    <rect x="713" y="320" width="110" height="110" rx="8"
+          fill="url(#keyGrad)" stroke="#5a5470" stroke-width="2"/>
+    <rect x="718" y="325" width="100" height="48" rx="6" fill="#ffffff" fill-opacity="0.06"/>
+    <text x="768" y="398" text-anchor="middle" font-size="44"
+          fill="#c4b08a" letter-spacing="1">E</text>
+
+    <!-- Key 6: R @ x=841 -->
+    <rect x="841" y="320" width="110" height="110" rx="8"
+          fill="url(#keyGrad)" stroke="#5a5470" stroke-width="2"/>
+    <rect x="846" y="325" width="100" height="48" rx="6" fill="#ffffff" fill-opacity="0.06"/>
+    <text x="896" y="398" text-anchor="middle" font-size="44"
+          fill="#c4b08a" letter-spacing="1">R</text>
+
+    <!-- Key 7: Tab @ x=969 -->
+    <rect x="969" y="320" width="110" height="110" rx="8"
+          fill="url(#keyGrad)" stroke="#5a5470" stroke-width="2"/>
+    <rect x="974" y="325" width="100" height="48" rx="6" fill="#ffffff" fill-opacity="0.06"/>
+    <text x="1024" y="398" text-anchor="middle" font-size="38"
+          fill="#c4b08a" letter-spacing="1">Tab</text>
+  </g>
+
+  <!-- Highlighted key (F11) — drawn ABOVE inactive keys -->
+  <g>
+    <!-- Subtle outer glow ring -->
+    <rect x="581" y="315" width="118" height="120" rx="10"
+          fill="none" stroke="#f4d98a" stroke-width="1" opacity="0.4"/>
+
+    <rect x="585" y="320" width="110" height="110" rx="8"
+          fill="url(#keyHotGrad)" stroke="#fff0b0" stroke-width="3"/>
+    <rect x="590" y="325" width="100" height="48" rx="6" fill="#ffffff" fill-opacity="0.22"/>
+    <text x="640" y="395" text-anchor="middle" font-size="42"
+          fill="#1a140a" font-weight="700" letter-spacing="1">F11</text>
+  </g>
+
+  <!-- ============================================================
+       FOOTER STRIP — feature checklist
+       ============================================================ -->
+  <line x1="200" y1="555" x2="1080" y2="555"
+        stroke="#c9a961" stroke-width="0.5" opacity="0.4"/>
+  <rect x="636" y="551" width="8" height="8" transform="rotate(45 640 555)"
+        fill="#c9a961" opacity="0.6"/>
+
+  <g font-size="20" letter-spacing="3" fill="#c9a961" opacity="0.9"
+     text-anchor="middle">
+    <text x="290" y="605">PROFILES</text>
+    <text x="510" y="605">MODIFIERS</text>
+    <text x="730" y="605">TAP MODES</text>
+    <text x="990" y="605">MOUSE BUTTONS</text>
+  </g>
+
+  <text x="640" y="660"
+        text-anchor="middle"
+        font-size="14" letter-spacing="4"
+        fill="#7a6a45" opacity="0.7">
+    SKSE  ·  PRISMA UI  ·  NO ESP
+  </text>
+
+</svg>
