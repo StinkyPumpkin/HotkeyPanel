@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Hotkey Panel</title>
+    <link rel="stylesheet" href="css/hkp.css?v=18">
+</head>
+<body>
+<div id="hkp-root" class="hkp-hidden">
+
+    <!-- Corner ornaments -->
+    <div class="corner-ornament corner-tl"><div class="diamond"></div></div>
+    <div class="corner-ornament corner-tr"><div class="diamond"></div></div>
+    <div class="corner-ornament corner-bl"><div class="diamond"></div></div>
+    <div class="corner-ornament corner-br"><div class="diamond"></div></div>
+
+    <!-- Top bar -->
+    <div class="hkp-topbar">
+        <div class="hkp-title">Hotkey Panel</div>
+        <div class="hkp-topbar-spacer"></div>
+        <div class="hkp-active-modifiers" id="hkp-active-mods" title="Active modifier layer">Default layer</div>
+        <button class="hkp-topbar-btn" id="hkp-btn-tap" onclick="HKP.cycleTapMode()" title="Cycle tap mode: Single / Double / Long">Tap: Single</button>
+        <button class="hkp-topbar-btn" id="hkp-btn-settings" onclick="HKP.toggleSettings()">Settings</button>
+        <button class="hkp-topbar-btn hkp-close-btn" onclick="HKP.close(event)">&times;</button>
+    </div>
+
+    <!-- Body: keyboard on top (full width), profile sidebar + mouse on bottom -->
+    <main class="hkp-main">
+
+        <!-- Color swatch bar -->
+        <div class="hkp-swatch-bar" id="hkp-swatch-bar">
+            <div class="hkp-swatch-label" id="hkp-swatch-label"></div>
+            <div class="hkp-swatches" id="hkp-swatches"></div>
+            <button class="hkp-swatch-exit" onclick="HKP.exitColorMode()">Exit color mode</button>
+        </div>
+
+        <!-- Keyboard: full width of main -->
+        <div class="hkp-keyboard">
+            <div class="hkp-kb-main" id="hkp-kb-main"></div>
+            <div class="hkp-kb-nav" id="hkp-kb-nav"></div>
+            <div class="hkp-kb-numpad" id="hkp-kb-numpad"></div>
+        </div>
+
+        <!-- Bottom half: sidebar (profiles + legend) + mouse image -->
+        <div class="hkp-bottom">
+            <aside class="hkp-sidebar">
+                <div class="hkp-sidebar-header">Mod Profiles</div>
+                <div class="hkp-profile-list" id="hkp-profile-list"></div>
+                <div class="hkp-sidebar-footer">
+                    <div class="hkp-legend">
+                        <div class="hkp-legend-row"><span class="hkp-sw hkp-sw-mod"></span> Modifier key</div>
+                        <div class="hkp-legend-row"><span class="hkp-sw hkp-sw-reserved"></span> Toggle key (locked)</div>
+                        <div class="hkp-legend-row"><span class="hkp-sw hkp-sw-dim"></span> Not in active profile</div>
+                    </div>
+                </div>
+            </aside>
+
+            <div class="hkp-mouse-wrap">
+                <div class="hkp-mouse-stage" id="hkp-mouse-stage"></div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Context menu -->
+    <div class="hkp-context-menu hkp-hidden" id="hkp-ctx-menu"></div>
+
+    <!-- Edit name dialog -->
+    <div class="hkp-modal hkp-hidden" id="hkp-modal-edit">
+        <div class="hkp-modal-box">
+            <div class="hkp-modal-title">Edit key label</div>
+            <input type="text" id="hkp-modal-edit-input" class="hkp-modal-input" maxlength="60"
+                   onkeydown="HKP.onEditKeydown(event)">
+            <div class="hkp-modal-buttons">
+                <button class="hkp-btn" onclick="HKP.cancelEdit()">Cancel</button>
+                <button class="hkp-btn hkp-btn-primary" onclick="HKP.saveEdit()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add profile dialog -->
+    <div class="hkp-modal hkp-hidden" id="hkp-modal-profile">
+        <div class="hkp-modal-box">
+            <div class="hkp-modal-title">New mod profile</div>
+            <input type="text" id="hkp-modal-profile-input" class="hkp-modal-input" maxlength="60"
+                   placeholder="e.g. Frostfall, SkyUI, Requiem"
+                   onkeydown="HKP.onProfileKeydown(event)">
+            <div class="hkp-modal-buttons">
+                <button class="hkp-btn" onclick="HKP.cancelProfile()">Cancel</button>
+                <button class="hkp-btn hkp-btn-primary" onclick="HKP.saveProfile()">Add</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm dialog -->
+    <div class="hkp-modal hkp-hidden" id="hkp-modal-confirm">
+        <div class="hkp-modal-box">
+            <div class="hkp-modal-title" id="hkp-confirm-title">Confirm</div>
+            <div class="hkp-modal-body" id="hkp-confirm-body"></div>
+            <div class="hkp-modal-buttons">
+                <button class="hkp-btn" onclick="HKP.confirmCancel()">Cancel</button>
+                <button class="hkp-btn hkp-btn-danger" id="hkp-confirm-ok" onclick="HKP.confirmOk()">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings panel -->
+    <div class="hkp-settings-panel hkp-hidden" id="hkp-settings">
+        <div class="hkp-settings-header">
+            <div class="hkp-modal-title">Settings</div>
+            <button class="hkp-close-btn" onclick="HKP.toggleSettings()">&times;</button>
+        </div>
+        <div class="hkp-settings-body">
+            <div class="hkp-setting-row">
+                <div class="hkp-setting-label">
+                    Toggle UI hotkey
+                    <div class="hkp-setting-hint">Global key that opens/closes this panel. Reserved and not editable as a regular key.</div>
+                </div>
+                <div class="hkp-setting-control">
+                    <button class="hkp-btn" id="hkp-toggle-key-btn" onclick="HKP.startBindToggleKey()">F11</button>
+                    <label class="hkp-check">
+                        <input type="checkbox" id="hkp-toggle-key-enabled" onchange="HKP.setToggleEnabled(this.checked)">
+                        <span>Enabled</span>
+                    </label>
+                </div>
+            </div>
+            <div class="hkp-setting-row">
+                <div class="hkp-setting-label">
+                    Label font size
+                    <div class="hkp-setting-hint">Size of your custom key and mouse labels (in pixels). Other UI text stays fixed.</div>
+                </div>
+                <div class="hkp-setting-control">
+                    <input type="range" id="hkp-label-size" min="10" max="36" step="1" value="18"
+                           oninput="HKP.setLabelSize(this.value)">
+                    <span id="hkp-label-size-val" class="hkp-scale-val">18</span>
+                </div>
+            </div>
+            <div class="hkp-setting-row">
+                <div class="hkp-setting-label">
+                    Panel size
+                    <div class="hkp-setting-hint">Shrink the whole panel. 100% = full size; minimum is 1/8 (12%).</div>
+                </div>
+                <div class="hkp-setting-control">
+                    <input type="range" id="hkp-panel-scale" min="12" max="100" step="1" value="100"
+                           oninput="HKP.previewPanelScale(this.value)"
+                           onchange="HKP.setPanelScale(this.value)">
+                    <span id="hkp-panel-scale-val" class="hkp-scale-val">100%</span>
+                </div>
+            </div>
+            <div class="hkp-setting-row">
+                <div class="hkp-setting-label">
+                    Panel transparency
+                    <div class="hkp-setting-hint">Opacity of the whole panel. 100% = solid; lower = see-through.</div>
+                </div>
+                <div class="hkp-setting-control">
+                    <input type="range" id="hkp-panel-opacity" min="20" max="100" step="1" value="100"
+                           oninput="HKP.setPanelOpacity(this.value)">
+                    <span id="hkp-panel-opacity-val" class="hkp-scale-val">100%</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script src="js/hkp.js?v=18"></script>
+</body>
+</html>
