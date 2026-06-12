@@ -169,6 +169,11 @@ bool PrismaUIBridge::IsVisible() const {
     return !m_api->IsHidden(m_view);
 }
 
+bool PrismaUIBridge::IsAnyPrismaViewFocused() const {
+    if (!m_ready || !m_api) return false;
+    return m_api->HasAnyActiveFocus();
+}
+
 void PrismaUIBridge::SendState(const std::string& json) {
     // Pass JSON as a JS string literal via base64 would be safer, but PEM
     // precedent just passes JSON directly as an object. We wrap in a try/parse.
