@@ -19,6 +19,7 @@ public:
     void HideUI();
     void ToggleUI();
     bool IsVisible() const;
+    bool IsAnyPrismaViewFocused() const;
     void SetPauseOnShow(bool pause) { m_pauseOnShow = pause; }
 
     // JS → game data

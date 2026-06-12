@@ -23,7 +23,11 @@ void InputHandler::SetToggleKey(std::uint32_t dxScanCode, bool enabled) {
 bool InputHandler::IsBlockingMenuOpen() {
     auto* ui = RE::UI::GetSingleton();
     if (!ui) return false;
-    // Same list as the old Papyrus IsBlockingMenuOpen()
+
+    // Another Prisma view (PEM, FollowerUI, etc.) already has focus — don't steal it
+    auto* bridge = PrismaUIBridge::GetSingleton();
+    if (bridge && bridge->IsAnyPrismaViewFocused()) return true;
+
     static constexpr const char* kBlocking[] = {
         "InventoryMenu", "MagicMenu", "FavoritesMenu", "MapMenu",
         "Dialogue Menu", "Crafting Menu", "BarterMenu", "ContainerMenu",
