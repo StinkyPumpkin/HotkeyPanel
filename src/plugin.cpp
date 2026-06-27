@@ -1,5 +1,6 @@
 #include "PrismaUIBridge.h"
 #include "InputHandler.h"
+#include "BlockerMenu.h"
 
 #include <spdlog/sinks/basic_file_sink.h>
 
@@ -30,6 +31,7 @@ namespace {
         case SKSE::MessagingInterface::kDataLoaded:
             SKSE::log::info("Data loaded - Hotkey Panel Prisma ready");
             InputHandler::GetSingleton()->Register();
+            BlockerMenu::Register();
             break;
         }
     }

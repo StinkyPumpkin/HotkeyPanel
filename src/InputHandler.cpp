@@ -49,22 +49,21 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
     auto* bridge = PrismaUIBridge::GetSingleton();
     if (!bridge) return RE::BSEventNotifyControl::kContinue;
 
-    // ----------------------------------------------------------------
-    // Panel VISIBLE: swallow all input; Tab/Esc close.
-    // ----------------------------------------------------------------
+    // Panel VISIBLE: FollowerUI pattern — return kStop so input doesn't
+    // propagate to downstream sinks.  BlockerMenu's kGameplay context lets
+    // the DX overlay still receive input, but ControlMap-bound engine
+    // actions don't fire because the event chain is stopped here.
     if (bridge->IsVisible()) {
         const auto toggleCode = m_toggleKey.load();
+        constexpr std::uint32_t kEscape = 1;
+        constexpr std::uint32_t kTab = 15;
+
         for (auto* evt = *a_event; evt; evt = evt->next) {
             auto* button = evt->AsButtonEvent();
             if (!button || !button->IsDown()) continue;
-
-            // Right mouse button has IDCode 1 like ESC on the mouse device —
-            // only act on keyboard so we don't accidentally close on RMB.
             if (button->device.get() != RE::INPUT_DEVICE::kKeyboard) continue;
 
             const auto code = button->GetIDCode();
-            constexpr std::uint32_t kEscape = 1;
-            constexpr std::uint32_t kTab = 15;
             if (code == kEscape || code == kTab || code == toggleCode) {
                 bridge->HideUI();
                 break;

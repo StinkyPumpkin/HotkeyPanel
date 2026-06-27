@@ -26,6 +26,11 @@ Thumbs.db
 .DS_Store
 Desktop.ini
 
+# Local build helper + logs
+_build_run.bat
+build*.log
+build*.log.err
+
 # Generated UI cache busts (don't commit personal hotkeys.json — that lives
 # in the player's Data/SKSE/Plugins/HotkeyPanel/ folder, never the repo)
 *.bak

@@ -1,6 +1,7 @@
 #include "PrismaUIBridge.h"
 #include "JsonStore.h"
 #include "InputHandler.h"
+#include "BlockerMenu.h"
 #include <format>
 
 static PrismaUIBridge* g_bridge = nullptr;
@@ -125,26 +126,28 @@ void PrismaUIBridge::InvokeJS(const std::string& script) {
 
 void PrismaUIBridge::ShowUI() {
     if (!m_ready || !m_api) return;
-    // Let PrismaUI manage its OWN focus menu shell (disableFocusMenu=false).
-    // PrismaUI's internal menu handles pause + cursor + input capture in a way
-    // the engine fully understands — Esc doesn't leak to the vanilla pause
-    // menu, and mouse-look re-engages cleanly on unfocus. Same pattern as
-    // FollowerUI/WhoreHorde.
+    if (!m_api->IsHidden(m_view)) return;
+
+    // Proven FollowerUI / WhoreHorde / SLUI pattern:
+    //   1. Open our headless BlockerMenu — kGameplay + kUsesCursor +
+    //      kUpdateUsesCursor, NO kPausesGame, NO kDisablePauseMenu,
+    //      NO HUD-hide. Gives cursor + clickable overlay, leaves HUD
+    //      visible, lets Tab/Tween re-activate normally after close.
+    //   2. Show + Focus PrismaUI with disableFocusMenu=true so PrismaUI
+    //      doesn't push its own Scaleform shell (that one hides HUD).
     //
-    // We used to push our own BlockerMenu here and pass disableFocusMenu=true,
-    // but that left two engine-state bugs: (1) Esc opened the vanilla pause
-    // menu on top of ours; (2) mouse-pan stopped working after close until
-    // another mod reset the camera. Both vanished once PrismaUI took over
-    // the menu-shell duties.
-    //
-    // InputHandler still returns kStop while m_view is visible — that blocks
-    // other mods' RegisterForKey handlers and prevents game keybinds from
-    // firing while the panel is open.
+    // FAILED APPROACHES (kept for the historical record):
+    //   - enabledControls snapshot+restore   — locked Alt-Start cell
+    //   - ignoreKeyboardMouse (doodlum)      — blocks mouse, breaks alt-tab
+    //   - AllowTextInput + in-place zero     — engine state corrupted, Tab/Tween blocked
+    //   - PrismaUI's own focus menu          — hides HUD
+    BlockerMenu::Open();
+
     m_api->Show(m_view);
-    m_api->Focus(m_view, m_pauseOnShow);
+    m_api->Focus(m_view, m_pauseOnShow, /*disableFocusMenu=*/true);
 
     InvokeJS("HKP.show()");
-    SKSE::log::info("PrismaUIBridge: UI shown (pause={})", m_pauseOnShow);
+    SKSE::log::info("PrismaUIBridge: UI shown (BlockerMenu open, pause={})", m_pauseOnShow);
 }
 
 void PrismaUIBridge::HideUI() {
@@ -152,9 +155,8 @@ void PrismaUIBridge::HideUI() {
     InvokeJS("HKP.hide()");
     m_api->Unfocus(m_view);
     m_api->Hide(m_view);
-    // No BlockerMenu::Close() — we no longer open it. PrismaUI's Unfocus
-    // tears down its own internal menu shell, which restores mouse-look and
-    // gameplay controls cleanly.
+
+    if (BlockerMenu::IsOpen()) BlockerMenu::Close();
 
     SKSE::log::info("PrismaUIBridge: UI hidden");
 }

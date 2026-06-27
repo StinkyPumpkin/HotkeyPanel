@@ -14,6 +14,8 @@ add_commonlibsse_plugin(${PROJECT_NAME} SOURCES
     src/PrismaUIBridge.cpp
     src/JsonStore.cpp
     src/InputHandler.cpp
+    src/BlockerMenu.cpp
+    src/MsvcShim.cpp
 )
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
 target_precompile_headers(${PROJECT_NAME} PRIVATE PCH.h)
