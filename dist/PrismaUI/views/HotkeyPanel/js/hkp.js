@@ -187,6 +187,7 @@
         buildKeyCaptions();
         renderKeyboard();
         renderMouse();
+        buildGKeys();
         renderProfiles();
         renderSwatches();
         attachGlobalHandlers();
@@ -348,6 +349,24 @@
         el.addEventListener('click', (e) => {
             if (fired) { e.stopPropagation(); e.preventDefault(); fired = false; }
         }, true);
+    }
+
+    // ---------------------------------------------------------------
+    // --Claude G-keys add-on: optional extra key column left of the mouse.
+    // The main mod ships js/gkeys.js as a null stub; the personal
+    // "HKP GKeys Addon" mod folder overrides that file with
+    // window.HKP_GKEYS = [{id:'F19',cap:'G1'}, ...]. The keys behave exactly
+    // like keyboard keys (labels, colours, profiles, modifiers, tap modes) —
+    // with the stub in place the column simply stays hidden.
+    // ---------------------------------------------------------------
+    function buildGKeys() {
+        const wrap = document.getElementById('hkp-gkeys');
+        if (!wrap) return;
+        const defs = window.HKP_GKEYS;
+        if (!Array.isArray(defs) || !defs.length) { wrap.classList.add('hkp-hidden'); return; }
+        wrap.innerHTML = '';
+        defs.forEach(d => wrap.appendChild(makeKeyEl(d.id, d.cap, null)));
+        wrap.classList.remove('hkp-hidden');
     }
 
     // ---------------------------------------------------------------
