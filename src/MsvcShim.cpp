@@ -47,19 +47,11 @@ size_t __cdecl __std_regex_transform_primary_char(const void*, void*, size_t) { 
 //       uint16_t* dest,
 //       uint16_t old_val, uint16_t new_val) noexcept;
 //
-// We implement the un-vectorized fallback so the stub is correct if it ever
-// fires. extern "C" symbols only resolve by NAME at link time — so even if
-// the signature is slightly wrong, the linker is satisfied. Runtime risk only
-// applies if CommonLibSSE actually invokes this, which is unlikely.
+// REMOVED 2026-07-23: libcpmt.lib in the current VS toolchain (MSVC 14.44
+// linker era) now SHIPS __std_replace_copy_2, so our stub became a
+// multiply-defined symbol (LNK2005) instead of dead code — the "linker will
+// prefer the lib version" prediction above was wrong; it errors. The regex
+// stub above did NOT collide, so it stays until the lib provides it too.
 // ---------------------------------------------------------------------------
-void __stdcall __std_replace_copy_2(
-    const uint16_t* first, const uint16_t* last,
-    uint16_t* dest,
-    uint16_t old_val, uint16_t new_val) noexcept
-{
-    for (; first != last; ++first, ++dest) {
-        *dest = (*first == old_val) ? new_val : *first;
-    }
-}
 
 }  // extern "C"
