@@ -918,6 +918,18 @@
                 }
             }
         });
+        // --Claude text-input guard: tell the DLL whenever any text box gains or
+        // loses focus so its input sink stops treating ESC/Tab/toggle as
+        // panel-close while the user is typing a name. focusout defers one tick
+        // so an input->input focus hop doesn't flicker the gate off.
+        const sendTextFlag = () => {
+            const el = document.activeElement;
+            const isText = !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA');
+            dispatchToBridge('hkpTextInput', isText ? '1' : '0');
+        };
+        document.addEventListener('focusin', sendTextFlag);
+        document.addEventListener('focusout', () => setTimeout(sendTextFlag, 0));
+
         document.addEventListener('keydown', (e) => {
             if (bindingToggleKey) {
                 e.preventDefault();
@@ -927,6 +939,15 @@
                 return;
             }
             if (e.key === 'Escape' || e.key === 'Tab') {
+                // --Claude text-input guard: a focused text box owns its keys — its own
+                // keydown (Enter=save, ESC=cancel) has already run; just drop focus and
+                // stop, so one ESC can't cancel the edit AND close the next layer too.
+                const t = e.target;
+                if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) {
+                    e.preventDefault();
+                    t.blur();
+                    return;
+                }
                 e.preventDefault();
                 // ESC/Tab cascade: close whatever is layered on top first.
                 if (!document.getElementById('hkp-modal-confirm').classList.contains('hkp-hidden')) { confirmCancel(); return; }

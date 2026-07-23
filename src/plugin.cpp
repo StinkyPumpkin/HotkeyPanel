@@ -32,6 +32,7 @@ namespace {
             SKSE::log::info("Data loaded - Hotkey Panel Prisma ready");
             InputHandler::GetSingleton()->Register();
             BlockerMenu::Register();
+            PrismaUIBridge::RegisterConsoleGuard();
             break;
         }
     }

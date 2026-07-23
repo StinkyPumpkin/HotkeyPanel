@@ -54,6 +54,14 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
     // the DX overlay still receive input, but ControlMap-bound engine
     // actions don't fire because the event chain is stopped here.
     if (bridge->IsVisible()) {
+        // --Claude text-input guard: while a text box has focus in the panel
+        // (edit-name / profile modals, inline mouse inputs) the close keys are
+        // OFF — ESC there cancels the edit in JS, Tab just blurs. Still kStop:
+        // the game never sees a single key while the panel is up.
+        if (bridge->IsTextInputActive()) {
+            return RE::BSEventNotifyControl::kStop;
+        }
+
         const auto toggleCode = m_toggleKey.load();
         constexpr std::uint32_t kEscape = 1;
         constexpr std::uint32_t kTab = 15;

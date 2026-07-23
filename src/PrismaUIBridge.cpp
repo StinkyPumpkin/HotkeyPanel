@@ -6,6 +6,39 @@
 
 static PrismaUIBridge* g_bridge = nullptr;
 
+// --Claude console guard (pattern proven in PEM, origin: archived sexlab-p-prism
+// MenuVisibilitySink): the input sink's kStop SHOULD swallow tilde, but sink order is
+// registration order — the game's own menu-input handling can run first and open the
+// Console over the panel anyway. This closes it the instant it opens while the panel
+// is visible. NO ControlMap manipulation — that route crashes (controlmap gotcha).
+class HKPConsoleGuard final : public RE::BSTEventSink<RE::MenuOpenCloseEvent> {
+public:
+    static HKPConsoleGuard* GetSingleton() {
+        static HKPConsoleGuard guard;
+        return &guard;
+    }
+    RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent* a_event,
+        RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override {
+        if (a_event && a_event->opening && a_event->menuName == "Console") {
+            auto* bridge = PrismaUIBridge::GetSingleton();
+            if (bridge && bridge->IsVisible()) {
+                if (auto* queue = RE::UIMessageQueue::GetSingleton()) {
+                    queue->AddMessage("Console", RE::UI_MESSAGE_TYPE::kHide, nullptr);
+                    SKSE::log::info("HKPConsoleGuard: Console closed (opened over the panel)");
+                }
+            }
+        }
+        return RE::BSEventNotifyControl::kContinue;
+    }
+};
+
+void PrismaUIBridge::RegisterConsoleGuard() {
+    if (auto* ui = RE::UI::GetSingleton()) {
+        ui->AddEventSink<RE::MenuOpenCloseEvent>(HKPConsoleGuard::GetSingleton());
+        SKSE::log::info("HKPConsoleGuard: registered");
+    }
+}
+
 PrismaUIBridge* PrismaUIBridge::GetSingleton() {
     static PrismaUIBridge singleton;
     return &singleton;
@@ -105,6 +138,12 @@ void PrismaUIBridge::RegisterJSListeners() {
         if (g_bridge) g_bridge->m_pauseOnShow = (s == "1");
     });
 
+    // JS → DLL: "1" while any text box has focus (edit-name modal, profile modal,
+    // inline mouse inputs), "0" when it blurs. Gates the close keys in InputHandler.
+    m_api->RegisterJSListener(m_view, "hkpTextInput", [](const char* data) {
+        if (g_bridge) g_bridge->SetTextInputActive(data && data[0] == '1');
+    });
+
     SKSE::log::info("PrismaUIBridge: JS listeners registered");
 }
 
@@ -152,6 +191,7 @@ void PrismaUIBridge::ShowUI() {
 
 void PrismaUIBridge::HideUI() {
     if (!m_ready || !m_api || !IsVisible()) return;
+    m_textInput.store(false);  // never leave the text-input gate armed after close
     InvokeJS("HKP.hide()");
     m_api->Unfocus(m_view);
     m_api->Hide(m_view);
