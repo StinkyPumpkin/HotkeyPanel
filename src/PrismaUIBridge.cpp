@@ -3,8 +3,185 @@
 #include "InputHandler.h"
 #include "BlockerMenu.h"
 #include <format>
+#include <set>
+#include <mutex>
+#include <thread>
+#include <chrono>
+#include <functional>
+#include <Windows.h>
 
 static PrismaUIBridge* g_bridge = nullptr;
+
+// --Claude focus recovery (ported from PEM, origin: archived sexlab-p-prism): after
+// closing the panel, verify PrismaUI actually released focus AND its FocusMenu, retry
+// via public API only, and if the focus/cursor state is still stuck, pulse the Console
+// open->closed once — a menu cycle forces the engine to rebuild its cursor/menu input
+// state. This automates the user's manual fix ("opening and closing the tween menu
+// fixes it") for: mouse pointer stays on screen after closing the panel.
+namespace HKPFocusRecovery {
+namespace {
+    using namespace std::chrono_literals;
+    constexpr const char* kFocusMenu = "PrismaUI_FocusMenu";
+
+    std::mutex g_lock;
+    PRISMA_UI_API::IVPrismaUI2* g_api = nullptr;
+    PrismaView g_view = 0;
+    std::atomic<std::uint64_t> g_gen{0};
+    std::atomic<bool> g_consoleOwned{false};
+
+    // Minimal delayed-to-main-thread scheduler (detached worker; jobs hop via AddTask)
+    class Scheduler {
+    public:
+        static Scheduler& Get() { static Scheduler s; return s; }
+        void After(std::chrono::milliseconds delay, std::function<void()> task) {
+            std::thread([delay, task = std::move(task)]() {
+                std::this_thread::sleep_for(delay);
+                if (auto* tasks = SKSE::GetTaskInterface()) tasks->AddTask(task);
+            }).detach();
+        }
+    };
+
+    bool Current(std::uint64_t gen, PRISMA_UI_API::IVPrismaUI2*& api, PrismaView& view) {
+        std::scoped_lock lk(g_lock);
+        if (g_gen.load() != gen || !g_api || !g_view) return false;
+        api = g_api; view = g_view;
+        return true;
+    }
+
+    bool MenuOpen(const char* name) {
+        auto* ui = RE::UI::GetSingleton();
+        return ui && ui->IsMenuOpen(name);
+    }
+
+    void QueueMenu(const char* name, RE::UI_MESSAGE_TYPE type) {
+        if (auto* q = RE::UIMessageQueue::GetSingleton()) q->AddMessage(name, type, nullptr);
+    }
+
+    void CloseOwnedConsole() {
+        if (g_consoleOwned.exchange(false)) {
+            SKSE::log::info("HKPFocusRecovery: closing recovery console");
+            QueueMenu("Console", RE::UI_MESSAGE_TYPE::kHide);
+        }
+    }
+
+    void ConsolePulse(std::uint64_t gen) {
+        PRISMA_UI_API::IVPrismaUI2* api; PrismaView view;
+        if (!Current(gen, api, view)) return;
+        if (MenuOpen("Console")) return;               // user's own console — leave it
+        bool expected = false;
+        if (!g_consoleOwned.compare_exchange_strong(expected, true)) return;
+        SKSE::log::warn("HKPFocusRecovery: console pulse (rebuild mouse/menu input state)");
+        QueueMenu("Console", RE::UI_MESSAGE_TYPE::kShow);
+        // real time between show and hide is REQUIRED (prism: same-frame never works)
+        Scheduler::Get().After(180ms, [gen]() { CloseOwnedConsole(); });
+    }
+
+    void VerifyCleanup(std::uint64_t gen, int attempt, bool needsPulse) {
+        PRISMA_UI_API::IVPrismaUI2* api; PrismaView view;
+        if (!Current(gen, api, view)) { CloseOwnedConsole(); return; }
+
+        const bool ownFocus  = api->HasFocus(view);
+        const bool anyFocus  = api->HasAnyActiveFocus();
+        const bool focusMenu = MenuOpen(kFocusMenu);
+        // --Claude HKP addition: the reported symptom is the CURSOR staying on screen
+        // with focus already clean — Cursor Menu still open this long after teardown
+        // (blocker closed, no Prisma focus) means the cursor state is stuck too.
+        const bool cursorStuck = !anyFocus && !focusMenu &&
+                                 MenuOpen("Cursor Menu");  // RE::CursorMenu::MENU_NAME (string_view in this CommonLib)
+
+        if (!ownFocus && anyFocus) {
+            ConsolePulse(gen);  // another Prisma mod holds focus — pulse makes it yield
+            return;
+        }
+        if (ownFocus && attempt < 3) {
+            SKSE::log::warn("HKPFocusRecovery: still focused after close - retry Unfocus ({})", attempt + 1);
+            api->Unfocus(view);
+        }
+        if (focusMenu) {
+            SKSE::log::warn("HKPFocusRecovery: stale FocusMenu - ForceHide ({})", attempt + 1);
+            QueueMenu(kFocusMenu, RE::UI_MESSAGE_TYPE::kForceHide);
+        }
+        if ((ownFocus || focusMenu) && attempt < 3) {
+            Scheduler::Get().After(80ms, [gen, attempt]() { VerifyCleanup(gen, attempt + 1, true); });
+            return;
+        }
+        if (cursorStuck) SKSE::log::warn("HKPFocusRecovery: Cursor Menu stuck after close");
+        if (needsPulse || ownFocus || focusMenu || cursorStuck) ConsolePulse(gen);
+    }
+
+    void CheckUnfocus(std::uint64_t gen, int attempt) {
+        PRISMA_UI_API::IVPrismaUI2* api; PrismaView view;
+        if (!Current(gen, api, view) || !api->IsValid(view)) return;
+
+        if (api->HasFocus(view) && attempt < 5) {
+            SKSE::log::warn("HKPFocusRecovery: waiting for Unfocus ({}/5)", attempt + 1);
+            api->Unfocus(view);
+            Scheduler::Get().After(70ms, [gen, attempt]() { CheckUnfocus(gen, attempt + 1); });
+            return;
+        }
+        const bool stale = MenuOpen(kFocusMenu) || api->HasFocus(view);
+        if (stale) QueueMenu(kFocusMenu, RE::UI_MESSAGE_TYPE::kHide);
+        Scheduler::Get().After(90ms, [gen, stale]() { VerifyCleanup(gen, 0, stale); });
+    }
+}  // namespace
+
+void Arm(PRISMA_UI_API::IVPrismaUI2* api, PrismaView view) {
+    if (!api || !view) return;
+    const auto gen = ++g_gen;
+    { std::scoped_lock lk(g_lock); g_api = api; g_view = view; }
+    Scheduler::Get().After(90ms, [gen]() { CheckUnfocus(gen, 0); });
+}
+
+void Cancel() {
+    ++g_gen;
+    CloseOwnedConsole();
+}
+
+bool IsConsoleOwned() { return g_consoleOwned.load(); }
+}  // namespace HKPFocusRecovery
+
+// --Claude font selector (ported from PEM): enumerate installed system font
+// families via GDI and return them as a JSON string array. Runs once at DOM
+// ready. WideCharToMultiByte(CP_UTF8) output is always valid UTF-8, so the
+// Ultralight invoke can't be dropped for encoding.
+static std::string BuildFontListJson()
+{
+    std::set<std::wstring> families;
+    LOGFONTW lf{};
+    lf.lfCharSet = DEFAULT_CHARSET;
+    HDC hdc = ::GetDC(nullptr);
+    if (hdc) {
+        ::EnumFontFamiliesExW(hdc, &lf,
+            [](const LOGFONTW* lpelfe, const TEXTMETRICW*, DWORD, LPARAM lparam) -> int {
+                auto* out = reinterpret_cast<std::set<std::wstring>*>(lparam);
+                if (lpelfe && lpelfe->lfFaceName[0] != L'@')
+                    out->insert(lpelfe->lfFaceName);
+                return 1;
+            },
+            reinterpret_cast<LPARAM>(&families), 0);
+        ::ReleaseDC(nullptr, hdc);
+    }
+
+    std::string json = "[";
+    bool first = true;
+    for (const auto& w : families) {
+        int n = ::WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, nullptr, 0, nullptr, nullptr);
+        if (n <= 1) continue;
+        std::string u8(static_cast<size_t>(n) - 1, '\0');
+        ::WideCharToMultiByte(CP_UTF8, 0, w.c_str(), -1, u8.data(), n, nullptr, nullptr);
+        std::string esc;
+        esc.reserve(u8.size() + 2);
+        for (char c : u8) {
+            if (c == '\\' || c == '"') esc += '\\';
+            esc += c;
+        }
+        if (!first) json += ",";
+        first = false;
+        json += "\"" + esc + "\"";
+    }
+    json += "]";
+    return json;
+}
 
 // --Claude console guard (pattern proven in PEM, origin: archived sexlab-p-prism
 // MenuVisibilitySink): the input sink's kStop SHOULD swallow tilde, but sink order is
@@ -20,6 +197,7 @@ public:
     RE::BSEventNotifyControl ProcessEvent(const RE::MenuOpenCloseEvent* a_event,
         RE::BSTEventSource<RE::MenuOpenCloseEvent>*) override {
         if (a_event && a_event->opening && a_event->menuName == "Console") {
+            if (HKPFocusRecovery::IsConsoleOwned()) return RE::BSEventNotifyControl::kContinue;
             auto* bridge = PrismaUIBridge::GetSingleton();
             if (bridge && bridge->IsVisible()) {
                 if (auto* queue = RE::UIMessageQueue::GetSingleton()) {
@@ -70,6 +248,7 @@ bool PrismaUIBridge::Initialize() {
                 g_bridge->m_domReady = true;
                 g_bridge->RegisterJSListeners();
                 g_bridge->PushInitialState();
+                g_bridge->InvokeJS("HKP.setFonts(" + BuildFontListJson() + ")");
             }
         });
 
@@ -167,26 +346,26 @@ void PrismaUIBridge::ShowUI() {
     if (!m_ready || !m_api) return;
     if (!m_api->IsHidden(m_view)) return;
 
-    // Proven FollowerUI / WhoreHorde / SLUI pattern:
-    //   1. Open our headless BlockerMenu — kGameplay + kUsesCursor +
-    //      kUpdateUsesCursor, NO kPausesGame, NO kDisablePauseMenu,
-    //      NO HUD-hide. Gives cursor + clickable overlay, leaves HUD
-    //      visible, lets Tab/Tween re-activate normally after close.
-    //   2. Show + Focus PrismaUI with disableFocusMenu=true so PrismaUI
-    //      doesn't push its own Scaleform shell (that one hides HUD).
+    // --Claude 2026-07-23: aligned to the MANDATED FollowerUI/PEM pattern
+    // (feedback-prismaui-blockermenu): blocker (kPausesGame) open FIRST, then Show,
+    // then Focus(view, false) — pause comes from the blocker (Focus-pause deadlocks
+    // the JS close callback) and PrismaUI's own FocusMenu stays ENABLED. That focus
+    // shell is what handles ESC at the ENGINE level; suppressing it (the old
+    // disableFocusMenu=true) let ESC fall through to the vanilla pause action
+    // ("close also brings up the esc menu") and left the cursor stuck after close.
     //
     // FAILED APPROACHES (kept for the historical record):
     //   - enabledControls snapshot+restore   — locked Alt-Start cell
     //   - ignoreKeyboardMouse (doodlum)      — blocks mouse, breaks alt-tab
     //   - AllowTextInput + in-place zero     — engine state corrupted, Tab/Tween blocked
-    //   - PrismaUI's own focus menu          — hides HUD
+    HKPFocusRecovery::Cancel();
     BlockerMenu::Open();
 
     m_api->Show(m_view);
-    m_api->Focus(m_view, m_pauseOnShow, /*disableFocusMenu=*/true);
+    m_api->Focus(m_view, false);
 
     InvokeJS("HKP.show()");
-    SKSE::log::info("PrismaUIBridge: UI shown (BlockerMenu open, pause={})", m_pauseOnShow);
+    SKSE::log::info("PrismaUIBridge: UI shown (blocker pauses, Prisma FocusMenu active)");
 }
 
 void PrismaUIBridge::HideUI() {
@@ -197,6 +376,10 @@ void PrismaUIBridge::HideUI() {
     m_api->Hide(m_view);
 
     if (BlockerMenu::IsOpen()) BlockerMenu::Close();
+
+    // --Claude: verify PrismaUI actually let go (focus, FocusMenu, cursor);
+    // self-heals the "mouse pointer still on screen after close" report.
+    HKPFocusRecovery::Arm(m_api, m_view);
 
     SKSE::log::info("PrismaUIBridge: UI hidden");
 }
