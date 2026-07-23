@@ -5,8 +5,13 @@ BlockerMenu::BlockerMenu() {
     inputContext = Context::kGameplay;
     depthPriority = 3;
 
+    // --Claude 2026-07-23: kPausesGame ADDED to match FollowerUI's shipping blocker
+    // verbatim (the mandated pattern — see feedback-prismaui-blockermenu). The old
+    // "NO pause" deviation here, combined with Focus(disableFocusMenu=true), is what
+    // let ESC reach the vanilla pause action and left the cursor stuck after close.
+    menuFlags.set(RE::UI_MENU_FLAGS::kPausesGame);
     // kAllowSaving + kUsesCursor + kUpdateUsesCursor = cursor visible and
-    // tracked, save works, but NO HUD hiding, NO pause, NO menu-stuck-after-close.
+    // tracked, save works, but NO HUD hiding, NO menu-stuck-after-close.
     menuFlags.set(RE::UI_MENU_FLAGS::kAllowSaving);
     menuFlags.set(RE::UI_MENU_FLAGS::kUsesCursor);
     menuFlags.set(RE::UI_MENU_FLAGS::kUpdateUsesCursor);

@@ -128,7 +128,24 @@
         { idx: 7,  hex: '#8a5aa8', lum: 'dark' },
         { idx: 8,  hex: '#b85a8a', lum: 'dark' },
         { idx: 9,  hex: '#7a6a5a', lum: 'dark' },
-        { idx: 10, hex: '#4a4a55', lum: 'dark' }
+        { idx: 10, hex: '#4a4a55', lum: 'dark' },
+        // --Claude: PEM's vivid palette, APPENDED so saved colorIdx 1-10 stay valid
+        { idx: 11, hex: '#4A90D9', lum: 'dark' },
+        { idx: 12, hex: '#D94A4A', lum: 'dark' },
+        { idx: 13, hex: '#4AD97A', lum: 'light' },
+        { idx: 14, hex: '#D9C04A', lum: 'light' },
+        { idx: 15, hex: '#9B59B6', lum: 'dark' },
+        { idx: 16, hex: '#E07030', lum: 'dark' },
+        { idx: 17, hex: '#50B0B0', lum: 'light' },
+        { idx: 18, hex: '#FFFFFF', lum: 'light' },
+        { idx: 19, hex: '#E45C9A', lum: 'dark' },
+        { idx: 20, hex: '#7B68EE', lum: 'dark' },
+        { idx: 21, hex: '#00CED1', lum: 'light' },
+        { idx: 22, hex: '#FF6B6B', lum: 'dark' },
+        { idx: 23, hex: '#A0D468', lum: 'light' },
+        { idx: 24, hex: '#C39BD3', lum: 'light' },
+        { idx: 25, hex: '#F5A623', lum: 'light' },
+        { idx: 26, hex: '#C0C0C0', lum: 'light' }
     ];
 
     const DEFAULT_STATE = {
@@ -138,7 +155,8 @@
             toggleKeyEnabled: true,
             labelFontSize: 18,
             panelScale: 100,    // percent, 12..100
-            panelOpacity: 100   // percent, 20..100
+            panelOpacity: 100,  // percent, 20..100
+            fontFamily: ''      // --Claude: '' = default EB Garamond stack
         },
         profiles: [{ name: 'DEFAULT', system: true }],
         activeProfile: 'DEFAULT',
@@ -819,6 +837,7 @@
         const po = Number(state.settings.panelOpacity) || 100;
         document.getElementById('hkp-panel-opacity').value = po;
         document.getElementById('hkp-panel-opacity-val').textContent = po + '%';
+        syncFontButton();
     }
     function setLabelSize(val) {
         const sz = Math.max(10, Math.min(36, Number(val) || 18));
@@ -862,6 +881,61 @@
         const pct = Number(state.settings.panelOpacity) || 100;
         document.documentElement.style.setProperty('--hkp-panel-opacity', (pct / 100).toFixed(3));
     }
+
+    // ---------------------------------------------------------------
+    // --Claude font selector (ported from PEM). The DLL pushes the installed
+    // system font list once at DOM ready via HKP.setFonts(). Native <select>
+    // is BANNED in PrismaUI (first-click focus bug) — custom div dropdown.
+    // ---------------------------------------------------------------
+    let fontList = [];
+    let fontDDOpen = false;
+    function setFonts(list) {
+        try { fontList = Array.isArray(list) ? list : JSON.parse(list); } catch (_) { fontList = []; }
+        syncFontButton();
+    }
+    function syncFontButton() {
+        const btn = document.getElementById('hkp-font-btn');
+        if (btn) btn.textContent = state.settings.fontFamily || 'Default (EB Garamond)';
+    }
+    function applyFont() {
+        const fam = state.settings.fontFamily;
+        // Inline body style overrides the stylesheet; '' reverts to the default stack.
+        document.body.style.fontFamily = fam ? '"' + fam + '", "EB Garamond", "Palatino Linotype", Georgia, serif' : '';
+    }
+    function toggleFontDD() {
+        fontDDOpen = !fontDDOpen;
+        const dd = document.getElementById('hkp-font-list');
+        if (!dd) return;
+        if (fontDDOpen) {
+            const cur = state.settings.fontFamily;
+            let html = '<div class="hkp-font-item' + (!cur ? ' selected' : '') +
+                       '" onclick="HKP.pickFont(\'\')">Default (EB Garamond)</div>';
+            for (const f of fontList) {
+                const esc = f.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/'/g, '&#39;').replace(/"/g, '&quot;');
+                html += '<div class="hkp-font-item' + (cur === f ? ' selected' : '') +
+                        '" style="font-family:\'' + esc + '\'" onclick="HKP.pickFont(\'' + esc + '\')">' + esc + '</div>';
+            }
+            dd.innerHTML = html;
+            dd.classList.remove('hkp-hidden');
+            const sel = dd.querySelector('.selected');
+            if (sel) sel.scrollIntoView({ block: 'center' });
+        } else {
+            dd.classList.add('hkp-hidden');
+        }
+    }
+    function closeFontDD() {
+        if (!fontDDOpen) return;
+        fontDDOpen = false;
+        const dd = document.getElementById('hkp-font-list');
+        if (dd) dd.classList.add('hkp-hidden');
+    }
+    function pickFont(name) {
+        state.settings.fontFamily = name || '';
+        closeFontDD();
+        syncFontButton();
+        applyFont();
+        save();
+    }
     function setToggleEnabled(val) {
         state.settings.toggleKeyEnabled = val;
         dispatchToBridge('hkpSetToggleKey', (val ? '1' : '0') + '|' + (state.settings.toggleKey || ''));
@@ -902,6 +976,8 @@
     // ---------------------------------------------------------------
     function attachGlobalHandlers() {
         document.addEventListener('click', (e) => {
+            // --Claude font selector: click anywhere outside the dropdown closes it
+            if (fontDDOpen && !e.target.closest('#hkp-font-dd')) closeFontDD();
             const menu = document.getElementById('hkp-ctx-menu');
             if (!menu.classList.contains('hkp-hidden')) {
                 if (menu.contains(e.target)) return;
@@ -954,6 +1030,7 @@
                 if (!document.getElementById('hkp-modal-edit').classList.contains('hkp-hidden'))    { cancelEdit(); return; }
                 if (!document.getElementById('hkp-modal-profile').classList.contains('hkp-hidden')) { cancelProfile(); return; }
                 if (!document.getElementById('hkp-ctx-menu').classList.contains('hkp-hidden'))     { hideContextMenu(); return; }
+                if (fontDDOpen) { closeFontDD(); return; }
                 if (colorMode !== null) { exitColorMode(); return; }
                 if (settingsOpen) { toggleSettings(); return; }
                 // Otherwise close the UI
@@ -989,7 +1066,7 @@
                 if (!state.profiles || !state.profiles.length) state.profiles = [{ name: 'DEFAULT', system: true }];
                 state.activeModifiers = [];
                 if (!state.activeTapMode) state.activeTapMode = 'single';
-                renderProfiles(); refreshAll(); updateModifierBadge(); applyTapModeBg(); applyLabelSize(); applyPanelScale(); applyPanelOpacity(); updateSwatchBarLabel();
+                renderProfiles(); refreshAll(); updateModifierBadge(); applyTapModeBg(); applyLabelSize(); applyPanelScale(); applyPanelOpacity(); applyFont(); syncFontButton(); updateSwatchBarLabel();
                 if (settingsOpen) syncSettingsInputs();
                 // Tell the DLL about the persisted toggle key so its input
                 // sink knows which key opens the panel. (Replaces what the old
@@ -1030,6 +1107,7 @@
         },
         toggleSettings, setToggleEnabled, startBindToggleKey, exitColorMode, cycleTapMode, setLabelSize,
         setPanelScale, previewPanelScale, setPanelOpacity,
+        setFonts, toggleFontDD, pickFont,
         saveEdit: () => saveEditInternal(),
         cancelEdit: () => cancelEdit(),
         onEditKeydown: (e) => { if (e.key === 'Enter') saveEditInternal(); else if (e.key === 'Escape') cancelEdit(); },

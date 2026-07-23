@@ -561,3 +561,19 @@ body.hkp-color-mode .hkp-key:not(.hkp-reserved) { cursor: crosshair; }
     pointer-events: none; z-index: 3000;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.8); max-width: 320px; word-break: break-word;
 }
+
+/* --Claude font selector (custom div dropdown — native <select> is banned in PrismaUI) */
+.hkp-font-dd { position: relative; }
+#hkp-font-btn { max-width: 230px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hkp-font-list {
+    position: absolute; right: 0; top: calc(100% + 4px);
+    width: 260px; max-height: 260px; overflow-y: auto;
+    background: var(--hkp-bg-panel); border: 1px solid var(--hkp-gold-dim);
+    border-radius: 3px; z-index: 2000;
+}
+.hkp-font-item { padding: 6px 12px; cursor: pointer; font-size: 15px; color: var(--hkp-text); }
+.hkp-font-item:hover { background: rgba(255, 255, 255, 0.08); }
+.hkp-font-item.selected { color: var(--hkp-gold); }
+
+/* --Claude: 26 swatches + clear now — let the swatch row wrap instead of overflowing */
+.hkp-swatches { flex-wrap: wrap; }
