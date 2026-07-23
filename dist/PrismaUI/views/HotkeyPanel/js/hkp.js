@@ -1029,7 +1029,18 @@
         document.addEventListener('keydown', (e) => {
             if (bindingToggleKey) {
                 e.preventDefault();
-                if (e.key !== 'Escape') applyBoundToggle(e.code);
+                if (e.key !== 'Escape') {
+                    // --Claude G-keys: Ultralight doesn't map VK F13-F24 to DOM
+                    // codes — e.code arrives empty/'Unidentified' and the bind
+                    // stored garbage ("unset"). Fall back to the key NAME
+                    // ("F19") or the raw keyCode (124-135 = F13-F24).
+                    let code = e.code;
+                    if (!code || code === 'Unidentified') {
+                        if (/^F(1[3-9]|2[0-4])$/.test(e.key)) code = e.key;
+                        else if (e.keyCode >= 124 && e.keyCode <= 135) code = 'F' + (e.keyCode - 111);
+                    }
+                    if (code) applyBoundToggle(code);
+                }
                 bindingToggleKey = false;
                 syncSettingsInputs();
                 return;
