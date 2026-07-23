@@ -129,23 +129,24 @@
         { idx: 8,  hex: '#b85a8a', lum: 'dark' },
         { idx: 9,  hex: '#7a6a5a', lum: 'dark' },
         { idx: 10, hex: '#4a4a55', lum: 'dark' },
-        // --Claude: PEM's vivid palette, APPENDED so saved colorIdx 1-10 stay valid
-        { idx: 11, hex: '#4A90D9', lum: 'dark' },
-        { idx: 12, hex: '#D94A4A', lum: 'dark' },
-        { idx: 13, hex: '#4AD97A', lum: 'light' },
-        { idx: 14, hex: '#D9C04A', lum: 'light' },
-        { idx: 15, hex: '#9B59B6', lum: 'dark' },
-        { idx: 16, hex: '#E07030', lum: 'dark' },
-        { idx: 17, hex: '#50B0B0', lum: 'light' },
-        { idx: 18, hex: '#FFFFFF', lum: 'light' },
-        { idx: 19, hex: '#E45C9A', lum: 'dark' },
-        { idx: 20, hex: '#7B68EE', lum: 'dark' },
-        { idx: 21, hex: '#00CED1', lum: 'light' },
-        { idx: 22, hex: '#FF6B6B', lum: 'dark' },
-        { idx: 23, hex: '#A0D468', lum: 'light' },
-        { idx: 24, hex: '#C39BD3', lum: 'light' },
-        { idx: 25, hex: '#F5A623', lum: 'light' },
-        { idx: 26, hex: '#C0C0C0', lum: 'light' }
+        // --Claude: 16 extra colours, APPENDED so saved colorIdx 1-10 stay valid.
+        // Deliberately loud (neons + pastels) so they don't blur into the muted originals.
+        { idx: 11, hex: '#FF3131', lum: 'dark' },   // neon red
+        { idx: 12, hex: '#FF7A00', lum: 'light' },  // bright orange
+        { idx: 13, hex: '#FFD700', lum: 'light' },  // gold
+        { idx: 14, hex: '#39FF14', lum: 'light' },  // neon green
+        { idx: 15, hex: '#00FFC8', lum: 'light' },  // mint
+        { idx: 16, hex: '#00BFFF', lum: 'light' },  // sky blue
+        { idx: 17, hex: '#1E5AFF', lum: 'dark' },   // electric blue
+        { idx: 18, hex: '#B026FF', lum: 'dark' },   // electric purple
+        { idx: 19, hex: '#FF10F0', lum: 'dark' },   // neon magenta
+        { idx: 20, hex: '#FF9ECD', lum: 'light' },  // pastel pink
+        { idx: 21, hex: '#FF6F61', lum: 'dark' },   // coral
+        { idx: 22, hex: '#40E0D0', lum: 'light' },  // turquoise
+        { idx: 23, hex: '#C0FF72', lum: 'light' },  // lime pastel
+        { idx: 24, hex: '#F5F5DC', lum: 'light' },  // cream
+        { idx: 25, hex: '#E6E6FA', lum: 'light' },  // lavender
+        { idx: 26, hex: '#FFFFFF', lum: 'light' }   // white
     ];
 
     const DEFAULT_STATE = {
