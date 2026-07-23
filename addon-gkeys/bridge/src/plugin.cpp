@@ -171,16 +171,43 @@ void InitializeLogging()
 
 }  // namespace
 
+namespace {
+
+void InstallHook()
+{
+    SKSE::AllocTrampoline(14);
+    auto&                           trampoline = SKSE::GetTrampoline();
+    REL::Relocation<std::uintptr_t> caller{ RELOCATION_ID(67315, 68617) };
+    DispatchHook::func = trampoline.write_call<5>(caller.address() + 0x7B, DispatchHook::thunk);
+    SKSE::log::info("GKeysInputBridge: input dispatch hooked (F13-F24 -> synthetic ButtonEvents)");
+}
+
+}  // namespace
+
 SKSEPluginLoad(const SKSE::LoadInterface* skse)
 {
     InitializeLogging();
     SKSE::log::info("GKeysInputBridge loading...");
     SKSE::Init(skse);
 
-    SKSE::AllocTrampoline(14);
-    auto&                          trampoline = SKSE::GetTrampoline();
-    REL::Relocation<std::uintptr_t> caller{ RELOCATION_ID(67315, 68617) };
-    DispatchHook::func = trampoline.write_call<5>(caller.address() + 0x7B, DispatchHook::thunk);
-    SKSE::log::info("GKeysInputBridge: input dispatch hooked (F13-F24 -> synthetic ButtonEvents)");
+    // --Claude ORDERING FIX: SKSE Menu Framework 3 hooks the SAME call site
+    // (its ProcessInputQueueHook) at plugin-load time, and DLLs load
+    // alphabetically — G(KeysInputBridge) before S(KSEMenuFramework) — so a
+    // load-time install here gets WRAPPED by SMF3: its thunk would run first
+    // and tap the chain BEFORE our injection, starving every AddInputEvent
+    // subscriber (iHUD's hotkey listener, PEM's press-to-bind capture) of the
+    // G-keys while plain sinks (MCM/SkyUI) saw them fine. Deferring the
+    // install to a task queued at kDataLoaded runs it one main-loop tick
+    // AFTER every plugin's load-time installs — we become the OUTERMOST
+    // wrapper, injecting before SMF3's tap so everyone sees the keys.
+    SKSE::GetMessagingInterface()->RegisterListener([](SKSE::MessagingInterface::Message* msg) {
+        if (msg->type == SKSE::MessagingInterface::kDataLoaded) {
+            if (auto* tasks = SKSE::GetTaskInterface()) {
+                tasks->AddTask([]() { InstallHook(); });
+            } else {
+                InstallHook();
+            }
+        }
+    });
     return true;
 }
