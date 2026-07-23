@@ -118,6 +118,22 @@ std::uint32_t InputHandler::KeyNameToDXScanCode(const std::string& n) {
     if (n == "F10") return 68;
     if (n == "F11") return 87;
     if (n == "F12") return 88;
+    // --Claude G-keys: DIK continuation codes for F13-F24 (F13-F23 = 0x64-0x6E,
+    // F24 = 0x76). The engine never emits ButtonEvents for these — the personal
+    // GKeysInputBridge DLL injects them — but the mapping lets the panel toggle
+    // (and any future binding) live on a G-key.
+    if (n == "F13") return 100;
+    if (n == "F14") return 101;
+    if (n == "F15") return 102;
+    if (n == "F16") return 103;
+    if (n == "F17") return 104;
+    if (n == "F18") return 105;
+    if (n == "F19") return 106;
+    if (n == "F20") return 107;
+    if (n == "F21") return 108;
+    if (n == "F22") return 109;
+    if (n == "F23") return 110;
+    if (n == "F24") return 118;
     // Number row
     if (n == "Digit1") return 2;
     if (n == "Digit2") return 3;
