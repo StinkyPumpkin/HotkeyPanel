@@ -36,3 +36,4 @@ build*.log.err
 *.bak
 *.tmp
 hotkeys.json
+addon-gkeys/bridge/build/
