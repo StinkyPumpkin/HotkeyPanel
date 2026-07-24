@@ -101,12 +101,25 @@ struct DispatchHook {
             auto* ev = g_pool[i];
             if (!ev) continue;
 
-            const bool phys = gateOK && (::GetAsyncKeyState(kFKeys[i].vk) & 0x8000) != 0;
+            // --Claude 2026-07-24: poll GetKeyState (thread-message state) OR'd with
+            // GetAsyncKeyState. Risas AIO MinHooks GetAsyncKeyState process-wide and
+            // returns 0 to other callers for keys it manages (it reads SMF's ini at
+            // startup, so the SMF toggle key gets nulled in gameplay and only works
+            // while a menu lifts its block — "closes but won't reopen"). GetKeyState
+            // is a separate user32 export it doesn't hook; the dispatch thunk runs on
+            // the main thread, which pumps the game window's messages, so it's fresh.
+            const bool phys = gateOK &&
+                (((::GetKeyState(kFKeys[i].vk) | ::GetAsyncKeyState(kFKeys[i].vk)) & 0x8000) != 0);
             float      value, held;
             if (phys && !g_down[i]) {                 // press edge
                 g_down[i]    = true;
                 g_pressAt[i] = now;
                 value = 1.0f; held = 0.0f;
+                // --Claude diagnostics: name every G-key edge with which API saw it —
+                // makes "the key did nothing" a one-line log read.
+                SKSE::log::info("GKeys: F{} DOWN (KeyState={} Async={})", 13 + (i == 11 ? 11 : i),
+                                (::GetKeyState(kFKeys[i].vk) & 0x8000) != 0,
+                                (::GetAsyncKeyState(kFKeys[i].vk) & 0x8000) != 0);
             } else if (phys && g_down[i]) {           // still held — native keyboards emit every frame
                 value = 1.0f;
                 held  = std::chrono::duration<float>(now - g_pressAt[i]).count();
