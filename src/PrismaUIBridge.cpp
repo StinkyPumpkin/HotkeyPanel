@@ -381,6 +381,25 @@ void PrismaUIBridge::HideUI() {
     // self-heals the "mouse pointer still on screen after close" report.
     HKPFocusRecovery::Arm(m_api, m_view);
 
+    // --Claude 2026-07-25: same fix as TFCam - a paused cursor menu can strand
+    // ThirdPersonState with freeRotationEnabled=false, so after close the mouse yaw
+    // steers the ACTOR instead of orbiting the camera (wrong under True Directional
+    // Movement). Re-assert one tick after the menu-close settles.
+    if (auto* tasks = SKSE::GetTaskInterface()) {
+        tasks->AddTask([]() {
+            auto* cam = RE::PlayerCamera::GetSingleton();
+            if (!cam) return;
+            auto& third = cam->cameraStates[RE::CameraState::kThirdPerson];
+            if (third && cam->currentState.get() == third.get()) {
+                auto* tps = static_cast<RE::ThirdPersonState*>(third.get());
+                if (!tps->freeRotationEnabled) {
+                    tps->freeRotationEnabled = true;
+                    SKSE::log::info("HKP: third-person free rotation was OFF after close - re-enabled");
+                }
+            }
+        });
+    }
+
     SKSE::log::info("PrismaUIBridge: UI hidden");
 }
 
