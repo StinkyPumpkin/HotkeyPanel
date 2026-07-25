@@ -1,6 +1,8 @@
 #include "InputHandler.h"
 #include "PrismaUIBridge.h"
 
+#include <Windows.h>  // GetKeyState + VK_F13..VK_F24
+
 InputHandler* InputHandler::GetSingleton() {
     static InputHandler singleton;
     return &singleton;
@@ -8,9 +10,33 @@ InputHandler* InputHandler::GetSingleton() {
 
 void InputHandler::Register() {
     if (auto* dm = RE::BSInputDeviceManager::GetSingleton()) {
-        dm->AddEventSink(this);
+        dm->AddEventSink(static_cast<RE::BSTEventSink<RE::InputEvent*>*>(this));
         SKSE::log::info("InputHandler: registered input event sink (toggle key=F11/87 default)");
     }
+    // Subscribe to the universal G-Key Service broadcast (GKeysInputBridge). Whether
+    // it's installed or not, normal keys still work via the InputEvent path above.
+    if (auto* mc = SKSE::GetModCallbackEventSource()) {
+        mc->AddEventSink(static_cast<RE::BSTEventSink<SKSE::ModCallbackEvent>*>(this));
+        SKSE::log::info("InputHandler: subscribed to G-Key Service (GKeyDown)");
+    }
+}
+
+RE::BSEventNotifyControl InputHandler::ProcessEvent(
+    const SKSE::ModCallbackEvent* e, RE::BSTEventSource<SKSE::ModCallbackEvent>*)
+{
+    if (!e || e->eventName != "GKeyDown") return RE::BSEventNotifyControl::kContinue;
+    if (!m_toggleEnabled.load()) return RE::BSEventNotifyControl::kContinue;
+    const auto dik = static_cast<std::uint32_t>(e->numArg + 0.5f);
+    if (dik != m_toggleKey.load()) return RE::BSEventNotifyControl::kContinue;
+
+    auto* bridge = PrismaUIBridge::GetSingleton();
+    if (!bridge) return RE::BSEventNotifyControl::kContinue;
+    if (bridge->IsVisible()) {
+        if (!bridge->IsTextInputActive()) bridge->HideUI();
+    } else if (!IsBlockingMenuOpen()) {
+        bridge->ShowUI();
+    }
+    return RE::BSEventNotifyControl::kContinue;
 }
 
 void InputHandler::SetToggleKey(std::uint32_t dxScanCode, bool enabled) {
@@ -72,7 +98,9 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
             if (button->device.get() != RE::INPUT_DEVICE::kKeyboard) continue;
 
             const auto code = button->GetIDCode();
-            if (code == kEscape || code == kTab || code == toggleCode) {
+            // G-key toggle close is handled by the G-Key Service sink; ESC/Tab always close.
+            if (code == kEscape || code == kTab ||
+                (code == toggleCode && !IsGKey(toggleCode))) {
                 bridge->HideUI();
                 break;
             }
@@ -91,7 +119,7 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
         auto* button = evt->AsButtonEvent();
         if (!button || !button->IsDown()) continue;
         if (button->device.get() != RE::INPUT_DEVICE::kKeyboard) continue;
-        if (button->GetIDCode() == wantKey) {
+        if (button->GetIDCode() == wantKey && !IsGKey(wantKey)) {  // G-keys handled by the service sink
             SKSE::log::info("InputHandler: toggle key {} pressed -> ShowUI", wantKey);
             bridge->ShowUI();
             return RE::BSEventNotifyControl::kStop;

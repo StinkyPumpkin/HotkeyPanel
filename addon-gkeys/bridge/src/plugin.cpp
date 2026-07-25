@@ -25,6 +25,17 @@
 // Gates: events are suppressed (held keys released) while the game window is
 // not foreground and while text entry is active (typing tools that emit F13+
 // must not trigger hotkeys mid-textbox).
+//
+// UNIVERSAL G-KEY SERVICE (2026-07-25): in addition to the ButtonEvent injection
+// above (which serves MCMs / mods we can't modify), each edge broadcasts a mod event
+// -- "GKeyDown"/"GKeyUp", numArg = the DIK code (100-118 for F13-F24). OUR UI mods
+// subscribe to that instead of relying on the injected ButtonEvent (which loses a
+// dispatch-ordering race in gameplay). Subscriber: GetModCallbackEventSource()->
+// AddEventSink; on GKeyDown, if (uint)numArg == its toggleKey (stored as the DIK) ->
+// toggle; and its ButtonEvent path must SKIP idCode 100-118 so it doesn't double-fire.
+// The broadcast is deferred one task tick (see FireGKeyEvent) to stay off the fragile
+// injection stack. NOTE: only press/release edges are sent (no hold duration), so a
+// subscriber's hold/double-press ToggleMode can't apply to a G-key -- single-press only.
 
 #include <Windows.h>
 #include <chrono>
@@ -77,6 +88,37 @@ void EnsurePool()
     SKSE::log::info("GKeysInputBridge: event pool created (F13-F24 -> DIK 100-110,118)");
 }
 
+// --Claude 2026-07-25: UNIVERSAL G-KEY SERVICE. Besides injecting ButtonEvents (for
+// MCMs / third-party mods we can't modify), broadcast a mod event on each G-key edge
+// so OUR UI mods subscribe reliably. A ModCallbackEvent (unlike the injected
+// ButtonEvent) has no input-dispatch ordering race - the injection failing to reach a
+// consumer in gameplay is the whole bug we've been fighting. numArg = the DIK code
+// (100-118 for F13-F24) - exactly what SMF/HotkeyPanel/FollowerUI already store as
+// their toggle key, so a subscriber compares `numArg == toggleKey` with NO mapping.
+//   API contract:  event "GKeyDown"/"GKeyUp", strArg "", numArg = DIK (100..118).
+//   C++ subscriber: GetModCallbackEventSource()->AddEventSink; on GKeyDown, if
+//                   (uint32_t)numArg == myToggleKey -> toggle.
+//   Papyrus:        RegisterForModEvent("GKeyDown","OnGKeyDown"); Event OnGKeyDown(
+//                   string s, float dik).
+void FireGKeyEvent(const char* name, std::uint32_t dik)
+{
+    // DEFER one main-thread task tick. Firing SendEvent synchronously from inside the
+    // injection loop (before the original dispatch runs) would invoke every subscriber
+    // on this stack; a subscriber that opens a menu / touches ControlMap could re-enter
+    // the hooked dispatch and clobber the non-reentrant splice statics (g_injHead/g_pool).
+    // A one-frame delay on a menu toggle is imperceptible. `name` is a string literal
+    // (static storage) so capturing the pointer is safe.
+    if (auto* tasks = SKSE::GetTaskInterface()) {
+        tasks->AddTask([name, dik]() {
+            if (auto* src = SKSE::GetModCallbackEventSource()) {
+                SKSE::ModCallbackEvent evt{ RE::BSFixedString(name), RE::BSFixedString(""),
+                                            static_cast<float>(dik), nullptr };
+                src->SendEvent(&evt);
+            }
+        });
+    }
+}
+
 struct DispatchHook {
     static void thunk(RE::BSTEventSource<RE::InputEvent*>* a_dispatcher, RE::InputEvent** a_evns)
     {
@@ -115,6 +157,7 @@ struct DispatchHook {
                 g_down[i]    = true;
                 g_pressAt[i] = now;
                 value = 1.0f; held = 0.0f;
+                FireGKeyEvent("GKeyDown", kFKeys[i].dik);   // --Claude: universal API broadcast
                 // --Claude diagnostics: name every G-key edge with which API saw it —
                 // makes "the key did nothing" a one-line log read.
                 SKSE::log::info("GKeys: F{} DOWN (KeyState={} Async={})", 13 + (i == 11 ? 11 : i),
@@ -127,6 +170,7 @@ struct DispatchHook {
                 g_down[i] = false;
                 value = 0.0f;
                 held  = std::chrono::duration<float>(now - g_pressAt[i]).count();
+                FireGKeyEvent("GKeyUp", kFKeys[i].dik);     // --Claude: universal API broadcast
             } else {
                 continue;
             }
