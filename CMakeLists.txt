@@ -4,8 +4,6 @@ project(HotkeyPanelPrisma VERSION 1.0.0 LANGUAGES CXX)
 # Output to MO2 mods folder
 if(DEFINED ENV{SKYRIM_MODS_FOLDER} AND IS_DIRECTORY "$ENV{SKYRIM_MODS_FOLDER}")
     set(OUTPUT_FOLDER "$ENV{SKYRIM_MODS_FOLDER}/Hotkey Panel--Claude")
-else()
-    set(OUTPUT_FOLDER "X:/MODDINGSSE/modorganizer2/mods/Hotkey Panel--Claude")
 endif()
 
 find_package(CommonLibSSE CONFIG REQUIRED)
