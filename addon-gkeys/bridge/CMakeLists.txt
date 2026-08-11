@@ -2,8 +2,9 @@ cmake_minimum_required(VERSION 3.21)
 project(GKeysInputBridge VERSION 1.0.0 LANGUAGES CXX)
 
 # Personal add-on: deploys into the HKP GKeys Addon mod folder
-set(OUTPUT_FOLDER "X:/MODDINGSSE/modorganizer2/mods/HKP GKeys Addon--Claude")
-
+if(DEFINED ENV{SKYRIM_MODS_FOLDER} AND IS_DIRECTORY "$ENV{SKYRIM_MODS_FOLDER}")
+    set(OUTPUT_FOLDER "$ENV{SKYRIM_MODS_FOLDER}/HKP GKeys Addon--Claude")
+endif()
 find_package(CommonLibSSE CONFIG REQUIRED)
 add_commonlibsse_plugin(${PROJECT_NAME} SOURCES
     src/plugin.cpp

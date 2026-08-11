@@ -4,8 +4,8 @@
 // updated to a build that ships these symbols in the runtime lib, the
 // linker will prefer the lib version and these stubs become dead code.
 //
-// Pattern lifted from C:\dev\FollowerUI-PrismaUI\src\RegexShim.cpp +
-// E:\SKSE-CLAUDE\MainMenuVideo-Claude\src\msvc_stub.cpp.
+// Pattern lifted from FollowerUI-PrismaUI's RegexShim.cpp +
+// MainMenuVideo-Claude's msvc_stub.cpp.
 
 #include <cstddef>
 #include <cstdint>
