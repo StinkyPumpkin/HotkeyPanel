@@ -62,6 +62,8 @@ constexpr FKeyDef kFKeys[12] = {
 
 bool                                  g_down[12]        = {};   // we consider the key held
 bool                                  g_engineOwned[12] = {};   // the engine saw it in DirectInput state itself
+bool                                  g_asyncPress[12]  = {};   // GetAsyncKeyState saw the press (then it alone decides the release)
+bool                                  g_stuckLogged[12] = {};
 std::chrono::steady_clock::time_point g_pressAt[12];
 
 bool TextEntryActive()
@@ -144,37 +146,56 @@ struct KeyboardProcessHook {
         for (int i = 0; i < 12; ++i) {
             const auto& k      = kFKeys[i];
             const bool  diDown = (kb->curState[k.dik] & 0x80) != 0;   // engine saw it this frame
-            // GetKeyState (thread-message state) OR GetAsyncKeyState: Risa's AIO MinHooks
-            // GetAsyncKeyState process-wide and nulls keys it manages for other callers;
-            // GetKeyState is a separate export it does not hook. Process runs on the main
-            // thread, which pumps the game window, so GetKeyState is fresh here.
-            const bool phys = gateOK &&
-                (((::GetKeyState(k.vk) | ::GetAsyncKeyState(k.vk)) & 0x8000) != 0);
+            // Two Windows views of the key. GetAsyncKeyState = physical/injected state right
+            // now (Risa's AIO MinHooks it, but its hook only alters answers for specific caller
+            // modules, never ours — verified in its v4.9 source). GetKeyState = this thread's
+            // message-queue view; it can STICK "down" when an overlay's window filter swallows
+            // the key-up message (2026-09-04 field log: F20 never re-armed after toggling
+            // Risa's launcher until another key was pressed). So: either API may open a press,
+            // but once GetAsyncKeyState has seen the press it ALONE decides the release.
+            const bool ksDown = (::GetKeyState(k.vk) & 0x8000) != 0;
+            const bool asDown = (::GetAsyncKeyState(k.vk) & 0x8000) != 0;
+            const bool phys   = gateOK && (ksDown || asDown);
 
             if (!g_down[i]) {
                 if (!diDown && !phys) continue;
                 // press edge
                 g_down[i]        = true;
                 g_engineOwned[i] = diDown;
+                g_asyncPress[i]  = asDown;
+                g_stuckLogged[i] = false;
                 g_pressAt[i]     = now;
                 if (!diDown) SetButtonState(kb, k.dik, 0.0f, false, true);
                 FireGKeyEvent("GKeyDown", k.dik);
                 SKSE::log::info("GKeys: {} DOWN ({}; KeyState={} Async={})", k.name,
-                                diDown ? "engine-native" : "emulated via SetButtonState",
-                                (::GetKeyState(k.vk) & 0x8000) != 0,
-                                (::GetAsyncKeyState(k.vk) & 0x8000) != 0);
+                                diDown ? "engine-native" : "emulated via SetButtonState", ksDown, asDown);
                 continue;
             }
 
             // held or released
-            const bool stillDown = g_engineOwned[i] ? diDown : phys;
+            bool stillDown;
+            if (g_engineOwned[i])      stillDown = diDown;
+            else if (g_asyncPress[i])  stillDown = gateOK && asDown;
+            else {                     // press only ever seen by GetKeyState: OR until async confirms
+                if (asDown) g_asyncPress[i] = true;
+                stillDown = phys;
+            }
             if (stillDown) {
                 if (!g_engineOwned[i]) SetButtonState(kb, k.dik, dt, true, true);
+                if (!g_stuckLogged[i] &&
+                    std::chrono::duration<float>(now - g_pressAt[i]).count() > 1.5f) {
+                    g_stuckLogged[i] = true;
+                    SKSE::log::warn("GKeys: {} held >1.5s (di={} KeyState={} Async={} asyncPress={}) — stuck key?",
+                                    k.name, diDown, ksDown, asDown, g_asyncPress[i]);
+                }
                 continue;
             }
             g_down[i] = false;
             if (!g_engineOwned[i]) SetButtonState(kb, k.dik, dt, true, false);
+            SKSE::log::info("GKeys: {} UP after {:.3f}s (KeyState={} Async={})", k.name,
+                            std::chrono::duration<float>(now - g_pressAt[i]).count(), ksDown, asDown);
             g_engineOwned[i] = false;
+            g_asyncPress[i]  = false;
             FireGKeyEvent("GKeyUp", k.dik);
         }
     }
