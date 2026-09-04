@@ -64,6 +64,7 @@ bool                                  g_down[12]        = {};   // we consider t
 bool                                  g_engineOwned[12] = {};   // the engine saw it in DirectInput state itself
 bool                                  g_asyncPress[12]  = {};   // GetAsyncKeyState saw the press (then it alone decides the release)
 bool                                  g_stuckLogged[12] = {};
+bool                                  g_gateSwallowLogged[12] = {};
 std::chrono::steady_clock::time_point g_pressAt[12];
 
 bool TextEntryActive()
@@ -72,10 +73,42 @@ bool TextEntryActive()
     return cm && cm->textEntryCount > 0;
 }
 
+// --Claude 2026-09-05: GetActiveWindow() is THREAD-LOCAL (the active window attached to the
+// calling thread's message queue). The keyboard device is not guaranteed to be processed on
+// the window's thread in gameplay, so that check read NULL and the gate silently swallowed
+// every G-key until a menu changed the threading (field logs 2026-09-04/05: keys only ever
+// seen while an overlay was up, and releases fired while both key APIs still said "down").
+// Compare the foreground window against the game's real render window handle instead.
+HWND GameWindow()
+{
+    static HWND cached = nullptr;
+    if (!cached) {
+        if (auto* renderer = RE::BSGraphics::Renderer::GetSingleton()) {
+            cached = reinterpret_cast<HWND>(renderer->data.renderWindows[0].hWnd);
+        }
+    }
+    return cached;
+}
+
 bool GameWindowForeground()
 {
+    HWND game = GameWindow();
+    HWND fg   = ::GetForegroundWindow();
+    if (game) return fg == game;
+    // no render window yet: fall back to the old thread-local test
     HWND active = ::GetActiveWindow();
-    return active != nullptr && active == ::GetForegroundWindow();
+    return active != nullptr && active == fg;
+}
+
+bool g_lastGate = true;
+void LogGateTransition(bool gateOK)
+{
+    if (gateOK == g_lastGate) return;
+    g_lastGate = gateOK;
+    SKSE::log::info("GKeys: gate {} (thread={} fg=0x{:X} game=0x{:X} textEntry={})",
+                    gateOK ? "OPEN" : "CLOSED", ::GetCurrentThreadId(),
+                    reinterpret_cast<std::uintptr_t>(::GetForegroundWindow()),
+                    reinterpret_cast<std::uintptr_t>(GameWindow()), TextEntryActive());
 }
 
 // --Claude 2026-07-25: UNIVERSAL G-KEY SERVICE broadcast (see header).
@@ -141,6 +174,7 @@ struct KeyboardProcessHook {
         if (!kb) return;
 
         const bool gateOK = GameWindowForeground() && !TextEntryActive();
+        LogGateTransition(gateOK);
         const auto now    = std::chrono::steady_clock::now();
 
         for (int i = 0; i < 12; ++i) {
@@ -158,7 +192,17 @@ struct KeyboardProcessHook {
             const bool phys   = gateOK && (ksDown || asDown);
 
             if (!g_down[i]) {
-                if (!diDown && !phys) continue;
+                if (!diDown && !phys) {
+                    if (!gateOK && (ksDown || asDown) && !g_gateSwallowLogged[i]) {
+                        g_gateSwallowLogged[i] = true;
+                        SKSE::log::warn("GKeys: {} is down but the gate is CLOSED (thread={} fg=0x{:X} game=0x{:X})",
+                                        k.name, ::GetCurrentThreadId(),
+                                        reinterpret_cast<std::uintptr_t>(::GetForegroundWindow()),
+                                        reinterpret_cast<std::uintptr_t>(GameWindow()));
+                    }
+                    continue;
+                }
+                g_gateSwallowLogged[i] = false;
                 // press edge
                 g_down[i]        = true;
                 g_engineOwned[i] = diDown;
