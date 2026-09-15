@@ -3,6 +3,7 @@
 #include "InputHandler.h"
 #include "BlockerMenu.h"
 #include "KeyPress.h"
+#include <vector>
 #include <format>
 #include <set>
 #include <mutex>
@@ -307,20 +308,33 @@ void PrismaUIBridge::RegisterJSListeners() {
     //     HideUI only POSTS kHide; the menu is not gone when this task returns.
     // The listener runs on the Ultralight thread, so everything is marshalled.
     m_api->RegisterJSListener(m_view, "hkpTriggerKey", [](const char* data) {
-        const std::string keyName(data ? data : "");
-        const auto dik = InputHandler::KeyNameToDXScanCode(keyName);
-        SKSE::log::info("UI: hkpTriggerKey '{}' -> DIK {}", keyName, dik);
-        if (!dik) {
+        // Payload: "<keyId>|<layerId>"  e.g. "F5|default", "KeyB|long:ControlLeft",
+        // "Numpad3|double:AltLeft+ShiftLeft". The layer is whatever the panel is
+        // currently SHOWING, so what fires matches the label the user was looking at.
+        const std::string payload(data ? data : "");
+        const auto pipe = payload.find('|');
+        const std::string keyName = payload.substr(0, pipe);
+        const std::string layerId = (pipe == std::string::npos) ? "default" : payload.substr(pipe + 1);
+
+        const auto code = InputHandler::KeyNameToDXScanCode(keyName);
+        if (!code) {
             SKSE::log::warn("hkpTriggerKey: no scan code for '{}', ignoring", keyName);
             return;
         }
+
+        std::vector<std::uint32_t> mods;
+        KeyPress::Tap tap = KeyPress::Tap::kSingle;
+        KeyPress::ParseLayer(layerId, mods, tap);
+
+        SKSE::log::info("UI: hkpTriggerKey '{}' layer '{}' -> code {}", keyName, layerId, code);
+
         auto* task = SKSE::GetTaskInterface();
         if (!task) return;
-        task->AddTask([dik]() {
+        task->AddTask([mods, code, tap]() {
             if (g_bridge && g_bridge->IsVisible()) {
                 g_bridge->HideUI();
             }
-            KeyPress::Fire(dik);
+            KeyPress::Fire(mods, code, tap);
         });
     });
 

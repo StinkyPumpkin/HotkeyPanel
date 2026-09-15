@@ -226,6 +226,50 @@ std::uint32_t InputHandler::KeyNameToDXScanCode(const std::string& n) {
     if (n == "Numpad7") return 71;
     if (n == "Numpad8") return 72;
     if (n == "Numpad9") return 73;
+    // --Claude 2026-09-15: the panel DRAWS all of these, but they had no scan code,
+    // so hold-to-fire silently did nothing on most of the keyboard. Standard
+    // DirectInput scancodes (the same numbering Skyrim's keyboard device uses).
+    //
+    // Modifiers matter twice over: they are also what the modifier LAYERS are keyed
+    // on (state.activeModifiers holds these ids), so firing a Ctrl+F5 layer needs
+    // ControlLeft resolvable, not just F5.
+    if (n == "ShiftLeft")      return 42;
+    if (n == "ShiftRight")     return 54;
+    if (n == "ControlLeft")    return 29;
+    if (n == "ControlRight")   return 157;
+    if (n == "AltLeft")        return 56;
+    if (n == "AltRight")       return 184;
+    if (n == "MetaLeft")       return 219;
+    if (n == "MetaRight")      return 220;
+    if (n == "ContextMenu")    return 221;
+
+    if (n == "ArrowUp")    return 200;
+    if (n == "ArrowDown")  return 208;
+    if (n == "ArrowLeft")  return 203;
+    if (n == "ArrowRight") return 205;
+
+    if (n == "Backquote")    return 41;
+    if (n == "BracketLeft")  return 26;
+    if (n == "BracketRight") return 27;
+    if (n == "Backslash")    return 43;
+    if (n == "Semicolon")    return 39;
+    if (n == "Quote")        return 40;
+    if (n == "Comma")        return 51;
+    if (n == "Period")       return 52;
+    if (n == "Slash")        return 53;
+
+    if (n == "NumpadAdd")      return 78;
+    if (n == "NumpadSubtract") return 74;
+    if (n == "NumpadMultiply") return 55;
+    if (n == "NumpadDivide")   return 181;
+    if (n == "NumpadEnter")    return 156;
+    if (n == "NumpadDecimal")  return 83;
+    if (n == "NumLock")        return 69;
+
+    if (n == "PrintScreen") return 183;
+    if (n == "ScrollLock")  return 70;
+    if (n == "Pause")       return 197;
+
     // Mouse buttons
     if (n == "Mouse1") return 256;
     if (n == "Mouse2") return 257;
