@@ -2,6 +2,7 @@
 #include "JsonStore.h"
 #include "InputHandler.h"
 #include "BlockerMenu.h"
+#include "KeyPress.h"
 #include <format>
 #include <set>
 #include <mutex>
@@ -293,6 +294,34 @@ void PrismaUIBridge::RegisterJSListeners() {
     m_api->RegisterJSListener(m_view, "hkpCloseUI", [](const char*) {
         SKSE::log::info("UI: hkpCloseUI");
         if (g_bridge) g_bridge->HideUI();
+    });
+
+    // JS → DLL: the user left-clicked a labelled key in the panel. Close the panel
+    // and fire that key for real, so whichever mod owns the hotkey acts on it.
+    //
+    // --Claude 2026-09-15. Ordering matters and is not optional:
+    //   * HideUI() first, because InputHandler returns kStop for ALL input while the
+    //     panel is visible - a key sent now would be swallowed by our own sink - and
+    //     because most mods ignore hotkeys while a menu is open.
+    //   * KeyPress::Fire() then waits several frames before the down edge, since
+    //     HideUI only POSTS kHide; the menu is not gone when this task returns.
+    // The listener runs on the Ultralight thread, so everything is marshalled.
+    m_api->RegisterJSListener(m_view, "hkpTriggerKey", [](const char* data) {
+        const std::string keyName(data ? data : "");
+        const auto dik = InputHandler::KeyNameToDXScanCode(keyName);
+        SKSE::log::info("UI: hkpTriggerKey '{}' -> DIK {}", keyName, dik);
+        if (!dik) {
+            SKSE::log::warn("hkpTriggerKey: no scan code for '{}', ignoring", keyName);
+            return;
+        }
+        auto* task = SKSE::GetTaskInterface();
+        if (!task) return;
+        task->AddTask([dik]() {
+            if (g_bridge && g_bridge->IsVisible()) {
+                g_bridge->HideUI();
+            }
+            KeyPress::Fire(dik);
+        });
     });
 
     // JS → DLL: settings push. Fired once on loadState (so we learn the
