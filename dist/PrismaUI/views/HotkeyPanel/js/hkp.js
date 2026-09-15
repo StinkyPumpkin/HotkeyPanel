@@ -314,9 +314,12 @@
         lbl.className = 'hkp-key-label hkp-empty';
         el.appendChild(lbl);
         el.addEventListener('click', () => onKeyClick(keyId, el));
+        el.addEventListener('mouseleave', cancelHold);
         el.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); onKeyContext(keyId, el, e); });
         // PrismaUI may swallow contextmenu — also catch right-click via mousedown button=2
         el.addEventListener('mousedown', (e) => {
+            // --Claude 2026-09-15: left button starts the hold-to-fire sweep.
+            if (e.button === 0) { startHold(keyId, el); }
             if (e.button === 2) { e.preventDefault(); e.stopPropagation(); onKeyContext(keyId, el, e); }
         });
         attachLongPress(el, keyId);
@@ -393,8 +396,11 @@
         el.appendChild(lbl);
 
         el.addEventListener('click', () => onKeyClick(keyId, el));
+        el.addEventListener('mouseleave', cancelHold);
         el.addEventListener('contextmenu', (e) => { e.preventDefault(); e.stopPropagation(); onKeyContext(keyId, el, e); });
         el.addEventListener('mousedown', (e) => {
+            // --Claude 2026-09-15: left button starts the hold-to-fire sweep.
+            if (e.button === 0) { startHold(keyId, el); }
             if (e.button === 2) { e.preventDefault(); e.stopPropagation(); onKeyContext(keyId, el, e); }
         });
         attachLongPress(el, keyId);
@@ -572,22 +578,99 @@
         if (isReservedKey(keyId)) return;
         if (state.modifierKeys.includes(keyId)) { toggleActiveModifier(keyId); return; }
         if (colorMode !== null) { applyColor(keyId); return; }
-
-        // --Claude 2026-09-15: nothing else claimed this click, so treat it as
-        // "press that hotkey". The DLL closes the panel and fires a real key edge
-        // pair, which is the only way to reach another mod's hotkey handler.
-        //
-        // Deliberately LAST: modifier toggling and colour painting keep priority, so
-        // this only fires where a left click used to do nothing at all. Editing is
-        // untouched — name/colour/reset all live on the right-click context menu.
-        //
-        // Gated on the key having a label: an unlabelled key is not a hotkey, and
-        // firing a random scan code because someone clicked blank panel space would
-        // be a nasty surprise. Drop this check if you want every key clickable.
-        const keyData = getKeyLayer(keyId, currentLayerId());
-        if (!keyData || !keyData.label) return;
-        dispatchToBridge('hkpTriggerKey', keyId);
+        // Firing the hotkey is NOT done here — a plain click is too easy to do by
+        // accident on a panel you are also editing. It is a press-and-hold instead;
+        // see startHold() below. This branch intentionally does nothing now.
     }
+
+    // ================= hold-to-fire (SkyPrompt style) =================
+    // --Claude 2026-09-15. Hold left mouse on a labelled key: the border fills
+    // clockwise from 12 o'clock, and completing the loop fires the hotkey (the DLL
+    // closes the panel and sends a real key edge pair). Release, leave the key, or
+    // lose window focus before it closes and nothing happens.
+
+    const HOLD_MS = 550;
+    let hold = null;   // { keyId, el, overlay, segs, lens, total, t0, raf }
+
+    // A key is "a hotkey" only if it carries a label in the current layer. Modifier
+    // keys and colour-paint mode keep their existing click behaviour and are excluded.
+    function canTriggerKey(keyId) {
+        if (isReservedKey(keyId)) return false;
+        if (state.modifierKeys.includes(keyId)) return false;
+        if (colorMode !== null) return false;
+        const keyData = getKeyLayer(keyId, currentLayerId());
+        return !!(keyData && keyData.label);
+    }
+
+    function cancelHold() {
+        if (!hold) return;
+        if (hold.raf) (window.cancelAnimationFrame || clearTimeout)(hold.raf);
+        if (hold.overlay && hold.overlay.parentNode) hold.overlay.parentNode.removeChild(hold.overlay);
+        hold.el.classList.remove('hkp-holding');
+        hold = null;
+    }
+
+    function startHold(keyId, el) {
+        cancelHold();
+        if (!canTriggerKey(keyId)) return;
+
+        // The overlay is absolutely positioned inside the key, so the key must be a
+        // positioning context. .hkp-key already is; the mouse-button elements may not.
+        if (window.getComputedStyle(el).position === 'static') el.style.position = 'relative';
+
+        const w = el.offsetWidth, h = el.offsetHeight;
+        if (!w || !h) return;
+
+        const overlay = document.createElement('div');
+        overlay.className = 'hkp-hold';
+        const segs = [];
+        ['s1', 's2', 's3', 's4', 's5'].forEach(function (c) {
+            const i = document.createElement('i');
+            i.className = c;
+            overlay.appendChild(i);
+            segs.push(i);
+        });
+        el.appendChild(overlay);
+        el.classList.add('hkp-holding');
+
+        // Pixel length of each clockwise segment: top-right half, right, bottom,
+        // left, top-left half. Driving the sweep by LENGTH (not by segment index)
+        // is what keeps the speed constant on keys of different widths.
+        const lens = [w / 2, h, w, h, w / 2];
+        const total = lens.reduce(function (a, b) { return a + b; }, 0);
+
+        hold = { keyId, el, overlay, segs, lens, total, t0: Date.now(), raf: null };
+        step();
+    }
+
+    function step() {
+        if (!hold) return;
+        const p = Math.min(1, (Date.now() - hold.t0) / HOLD_MS);
+        let travelled = p * hold.total;
+
+        for (let i = 0; i < hold.segs.length; i++) {
+            const len = Math.max(0, Math.min(travelled, hold.lens[i]));
+            travelled -= hold.lens[i];
+            // s2 and s4 are the vertical edges: they grow in height, the rest in width.
+            if (i === 1 || i === 3) hold.segs[i].style.height = len + 'px';
+            else                    hold.segs[i].style.width  = len + 'px';
+        }
+
+        if (p >= 1) {
+            const keyId = hold.keyId;
+            cancelHold();
+            dispatchToBridge('hkpTriggerKey', keyId);
+            return;
+        }
+        hold.raf = window.requestAnimationFrame
+            ? window.requestAnimationFrame(step)
+            : setTimeout(step, 16);   // Ultralight fallback: rAF is not guaranteed here
+    }
+
+    // Any of these aborts a hold in progress. mouseup is on the document so that
+    // releasing off the key still cancels cleanly.
+    document.addEventListener('mouseup', cancelHold);
+    window.addEventListener('blur', cancelHold);
 
     function toggleActiveModifier(keyId) {
         const on = state.activeModifiers.includes(keyId);
