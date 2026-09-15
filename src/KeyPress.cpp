@@ -59,11 +59,51 @@ namespace {
         return a_outDev != nullptr;
     }
 
+    // --Claude 2026-09-15: input is only LIVE once the panel is fully torn down.
+    //
+    // A fixed frame delay was wrong. Closing the panel often leaves the Cursor Menu
+    // stuck, and HKPFocusRecovery then pulses the Console open/closed to rebuild the
+    // mouse/menu input state - measured at ~200ms after the close, finishing ~385ms.
+    // A key fired inside that window IS delivered, but it arrives in menu mode, where
+    // every mod's hotkey handler ignores it. That is exactly why M, F1, Numpad0 and
+    // SLUI's key all queued cleanly in the log and did nothing.
+    //
+    // So gate on the actual condition rather than guessing a number: hold the script
+    // until the game is unpaused and neither the Console nor the Cursor Menu is open.
+    bool InputIsLive() {
+        auto* ui = RE::UI::GetSingleton();
+        if (!ui) return false;
+        if (ui->GameIsPaused()) return false;
+        if (ui->IsMenuOpen(RE::Console::MENU_NAME)) return false;
+        if (ui->IsMenuOpen(RE::CursorMenu::MENU_NAME)) return false;
+        return true;
+    }
+
     void RunFrom(std::shared_ptr<std::vector<Edge>> a_script, std::size_t a_index, int a_waited);
 
     void Schedule(std::shared_ptr<std::vector<Edge>> a_script, std::size_t a_index, int a_waited) {
         if (auto* task = SKSE::GetTaskInterface()) {
             task->AddTask([a_script, a_index, a_waited]() { RunFrom(a_script, a_index, a_waited); });
+        }
+    }
+
+    // Frames to keep waiting for InputIsLive() before giving up. ~2s at 60fps: long
+    // enough for the console pulse, short enough that a genuinely stuck menu does not
+    // leave a key press queued indefinitely.
+    constexpr int kMaxGateFrames = 120;
+
+    void GateThen(std::shared_ptr<std::vector<Edge>> a_script, int a_waited) {
+        if (InputIsLive()) {
+            SKSE::log::info("KeyPress: input live after {} frame(s), firing", a_waited);
+            Schedule(a_script, 0, 0);
+            return;
+        }
+        if (a_waited >= kMaxGateFrames) {
+            SKSE::log::warn("KeyPress: input still not live after {} frames, dropping the press", a_waited);
+            return;
+        }
+        if (auto* task = SKSE::GetTaskInterface()) {
+            task->AddTask([a_script, a_waited]() { GateThen(a_script, a_waited + 1); });
         }
     }
 
@@ -136,7 +176,7 @@ void KeyPress::Fire(const std::vector<std::uint32_t>& a_mods, std::uint32_t a_co
     if (!a_code) return;
 
     // Frame budget.
-    constexpr int kCloseFrames = 3;    // let HideUI's kHide actually pop the menu
+    constexpr int kCloseFrames = 1;    // GateThen() already waited for input to be live
     constexpr int kModSettle   = 2;    // modifiers must be down BEFORE the key edge
     constexpr int kHoldSingle  = 2;    // a press with no dwell can be missed
     constexpr int kHoldLong    = 50;   // ~0.8 s - past every "long press" threshold
@@ -173,10 +213,10 @@ void KeyPress::Fire(const std::vector<std::uint32_t>& a_mods, std::uint32_t a_co
         first = false;
     }
 
-    SKSE::log::info("KeyPress: queued code {} tap={} mods={} ({} edges)",
+    SKSE::log::info("KeyPress: queued code {} tap={} mods={} ({} edges) - waiting for input to be live",
                     a_code,
                     a_tap == Tap::kDouble ? "double" : (a_tap == Tap::kLong ? "long" : "single"),
                     a_mods.size(), script->size());
 
-    Schedule(script, 0, 0);
+    GateThen(script, 0);
 }
