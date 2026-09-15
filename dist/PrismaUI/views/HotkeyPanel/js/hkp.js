@@ -571,7 +571,22 @@
     function onKeyClick(keyId, el) {
         if (isReservedKey(keyId)) return;
         if (state.modifierKeys.includes(keyId)) { toggleActiveModifier(keyId); return; }
-        if (colorMode !== null) applyColor(keyId);
+        if (colorMode !== null) { applyColor(keyId); return; }
+
+        // --Claude 2026-09-15: nothing else claimed this click, so treat it as
+        // "press that hotkey". The DLL closes the panel and fires a real key edge
+        // pair, which is the only way to reach another mod's hotkey handler.
+        //
+        // Deliberately LAST: modifier toggling and colour painting keep priority, so
+        // this only fires where a left click used to do nothing at all. Editing is
+        // untouched — name/colour/reset all live on the right-click context menu.
+        //
+        // Gated on the key having a label: an unlabelled key is not a hotkey, and
+        // firing a random scan code because someone clicked blank panel space would
+        // be a nasty surprise. Drop this check if you want every key clickable.
+        const keyData = getKeyLayer(keyId, currentLayerId());
+        if (!keyData || !keyData.label) return;
+        dispatchToBridge('hkpTriggerKey', keyId);
     }
 
     function toggleActiveModifier(keyId) {
