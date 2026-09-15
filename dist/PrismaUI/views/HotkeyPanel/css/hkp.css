@@ -644,3 +644,37 @@ body.hkp-color-mode .hkp-key:not(.hkp-reserved) { cursor: crosshair; }
 .hkp-m-input[data-color="25"] { background: rgba(230, 230, 250, 0.92); }
 .hkp-m-input[data-color="26"] { background: rgba(255, 255, 255, 0.92); }
 /* light backgrounds get dark label text (same rule the originals use via data-lum) */
+
+/* --Claude 2026-09-15: SkyPrompt-style hold-to-fire.
+   Hold left mouse on a labelled key and its border fills clockwise from 12
+   o'clock; complete the loop and the hotkey fires. Release early and it aborts.
+
+   Built from five positioned bars rather than an SVG stroke or a conic-gradient
+   because this UI runs in Ultralight: nothing in the existing views uses SVG,
+   @property or conic-gradient, so none of those are proven here. Plain absolute
+   positioning + width/height is the same toolkit the rest of the panel uses.
+   Longhand offsets, not `inset`, for the same reason.
+
+   Segment order is clockwise from top-centre:
+     s1 top-right half -> s2 right -> s3 bottom -> s4 left -> s5 top-left half
+   JS sizes each one in PIXELS against the key's real width/height, so the sweep
+   runs at a constant speed on a 6.25u spacebar and a 1u letter alike. */
+.hkp-hold {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+    z-index: 5;
+}
+.hkp-hold > i {
+    position: absolute;
+    display: block;
+    background: var(--hkp-gold-hi);
+    box-shadow: 0 0 4px var(--hkp-gold-hi);
+}
+.hkp-hold .s1 { top: 0;    left: 50%;  height: 2px; width: 0; }
+.hkp-hold .s2 { top: 0;    right: 0;   width: 2px;  height: 0; }
+.hkp-hold .s3 { bottom: 0; right: 0;   height: 2px; width: 0; }
+.hkp-hold .s4 { bottom: 0; left: 0;    width: 2px;  height: 0; }
+.hkp-hold .s5 { top: 0;    left: 0;    height: 2px; width: 0; }
+
+.hkp-holding { border-color: var(--hkp-gold-dim) !important; }
