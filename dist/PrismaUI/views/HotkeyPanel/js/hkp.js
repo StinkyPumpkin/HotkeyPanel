@@ -639,7 +639,12 @@
         const lens = [w / 2, h, w, h, w / 2];
         const total = lens.reduce(function (a, b) { return a + b; }, 0);
 
-        hold = { keyId, el, overlay, segs, lens, total, t0: Date.now(), raf: null };
+        // Captured at press time, not at completion: the user could toggle a modifier
+        // or cycle the tap mode mid-hold, and we must fire what they were looking at
+        // when they started.
+        const layerId = currentLayerId();
+
+        hold = { keyId, layerId, el, overlay, segs, lens, total, t0: Date.now(), raf: null };
         step();
     }
 
@@ -658,8 +663,14 @@
 
         if (p >= 1) {
             const keyId = hold.keyId;
+            // --Claude 2026-09-15: send the layer we are SHOWING, so what fires matches
+            // the label the user was looking at. currentLayerId() is "default",
+            // "ControlLeft+ShiftLeft", "double:default", "long:AltLeft", ... — the DLL
+            // parses it back into modifier keys + tap mode and reproduces the input:
+            // modifiers down, key pressed once / twice / long, modifiers up.
+            const layerId = hold.layerId;
             cancelHold();
-            dispatchToBridge('hkpTriggerKey', keyId);
+            dispatchToBridge('hkpTriggerKey', keyId + '|' + layerId);
             return;
         }
         hold.raf = window.requestAnimationFrame
