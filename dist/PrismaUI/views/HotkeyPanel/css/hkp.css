@@ -678,3 +678,18 @@ body.hkp-color-mode .hkp-key:not(.hkp-reserved) { cursor: crosshair; }
 .hkp-hold .s5 { top: 0;    left: 0;    height: 2px; width: 0; }
 
 .hkp-holding { border-color: var(--hkp-gold-dim) !important; }
+
+/* --Claude 2026-09-15: the sweep has to contrast with the KEY, not just the panel.
+   Reported as "fill doesn't show on the modifier page". It was drawing fine — the
+   key held there was F7 on the ShiftLeft layer, palette colour 3 (#d0b845, lum
+   light), and a #e8c98a gold bar on that is invisible. Default-layer keys are
+   mostly dark (1/6/9/10) so it read fine there, which is why it looked layer-
+   specific.
+
+   applyKeyVisual already stamps data-lum from PALETTE[].lum for exactly this kind
+   of problem, so key off that rather than inventing a second luminance scheme. */
+.hkp-key[data-lum="light"] .hkp-hold > i,
+.hkp-m-input[data-lum="light"] .hkp-hold > i {
+    background: #1a1206;
+    box-shadow: 0 0 4px rgba(0, 0, 0, 0.85);
+}
