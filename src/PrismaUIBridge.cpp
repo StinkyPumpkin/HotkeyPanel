@@ -250,6 +250,9 @@ bool PrismaUIBridge::Initialize() {
                 g_bridge->m_domReady = true;
                 g_bridge->RegisterJSListeners();
                 g_bridge->PushInitialState();
+                // external hotkeys that arrived before the view existed (saved state is loaded now)
+                for (const auto& js : g_bridge->m_pendingJS) g_bridge->InvokeJS(js);
+                g_bridge->m_pendingJS.clear();
                 g_bridge->InvokeJS("HKP.setFonts(" + BuildFontListJson() + ")");
             }
         });
@@ -378,6 +381,21 @@ void PrismaUIBridge::PushInitialState() {
         return;
     }
     SendState(json);
+}
+
+void PrismaUIBridge::ApplyExternalHotkey(std::uint32_t dik, const std::string& strArg) {
+    // JSON string literal: safe to drop straight into the JS call.
+    std::string q = "\"";
+    for (const unsigned char c : strArg) {
+        if (c == '"' || c == '\\') { q += '\\'; q += static_cast<char>(c); }
+        else if (c < 0x20) { char buf[8]; std::snprintf(buf, sizeof(buf), "\\u%04x", c); q += buf; }
+        else q += static_cast<char>(c);
+    }
+    q += "\"";
+    const std::string js = "HKP.setExternalHotkey(" + std::to_string(dik) + "," + q + ")";
+    SKSE::log::info("External hotkey: dik={} '{}'", dik, strArg);
+    if (!m_domReady) { m_pendingJS.push_back(js); return; }
+    InvokeJS(js);
 }
 
 void PrismaUIBridge::InvokeJS(const std::string& script) {
