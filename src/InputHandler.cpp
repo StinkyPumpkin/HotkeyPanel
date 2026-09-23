@@ -24,7 +24,17 @@ void InputHandler::Register() {
 RE::BSEventNotifyControl InputHandler::ProcessEvent(
     const SKSE::ModCallbackEvent* e, RE::BSTEventSource<SKSE::ModCallbackEvent>*)
 {
-    if (!e || e->eventName != "GKeyDown") return RE::BSEventNotifyControl::kContinue;
+    if (!e) return RE::BSEventNotifyControl::kContinue;
+    // --Claude 2026-09-23: hotkey announcements from other mods (PEM outfit keys, MCM Unlocked
+    // key binds). numArg = DX scan code (0 = remove), strArg = "source|colourIdx|label".
+    if (e->eventName == "HKP_SetHotkey") {
+        if (auto* bridge = PrismaUIBridge::GetSingleton()) {
+            const auto dik = e->numArg > 0.0f ? static_cast<std::uint32_t>(e->numArg + 0.5f) : 0u;
+            bridge->ApplyExternalHotkey(dik, e->strArg.c_str());
+        }
+        return RE::BSEventNotifyControl::kContinue;
+    }
+    if (e->eventName != "GKeyDown") return RE::BSEventNotifyControl::kContinue;
     if (!m_toggleEnabled.load()) return RE::BSEventNotifyControl::kContinue;
     const auto dik = static_cast<std::uint32_t>(e->numArg + 0.5f);
     if (dik != m_toggleKey.load()) return RE::BSEventNotifyControl::kContinue;

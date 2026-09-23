@@ -5,6 +5,8 @@
 #include "PrismaUI_API.h"
 #include <string>
 #include <atomic>
+#include <cstdio>
+#include <vector>
 
 class PrismaUIBridge {
 public:
@@ -35,6 +37,11 @@ public:
     // JS → game data
     void SendState(const std::string& json);  // HKP.loadState(...)
 
+    // --Claude 2026-09-23: another mod announced a hotkey (SKSE mod event HKP_SetHotkey,
+    // strArg "source|colourIdx|label", numArg DX scan code, 0 = remove). Forwarded to
+    // HKP.setExternalHotkey; queued until the view's DOM (and saved state) is ready.
+    void ApplyExternalHotkey(std::uint32_t dik, const std::string& strArg);
+
 private:
     PrismaUIBridge() = default;
     ~PrismaUIBridge() = default;
@@ -44,6 +51,7 @@ private:
     void RegisterJSListeners();
     void InvokeJS(const std::string& script);
     void PushInitialState();
+    std::vector<std::string> m_pendingJS;   // external hotkeys received before DOM ready
 
     PRISMA_UI_API::IVPrismaUI2* m_api = nullptr;
     PrismaView m_view = 0;

@@ -1196,9 +1196,72 @@
     function cancelProfile() { pendingProfileCallback = null; document.getElementById('hkp-modal-profile').classList.add('hkp-hidden'); }
 
     // ---------------------------------------------------------------
+    // External hotkeys (--Claude 2026-09-23)
+    // Other mods announce their keys through the SKSE mod event HKP_SetHotkey; the DLL
+    // forwards them here. PEM sends outfit hotkeys (outfit name, green), MCM Unlocked sends
+    // every MCM key bind ("<MCM>: <option>", blue). Each entry carries a `source` id, so when
+    // the same outfit/option moves to a new key its old key's entry is dropped. Written to
+    // the DEFAULT layer (single tap, no modifier) of the key; profiles untouched.
+    // ---------------------------------------------------------------
+    const DIK_TO_CODE = (() => {
+        const m = {};
+        const put = (codes, start) => codes.forEach((c, i) => { m[start + i] = c; });
+        put(['Digit1','Digit2','Digit3','Digit4','Digit5','Digit6','Digit7','Digit8','Digit9','Digit0','Minus','Equal','Backspace','Tab'], 2);
+        put(['KeyQ','KeyW','KeyE','KeyR','KeyT','KeyY','KeyU','KeyI','KeyO','KeyP','BracketLeft','BracketRight','Enter','ControlLeft'], 16);
+        put(['KeyA','KeyS','KeyD','KeyF','KeyG','KeyH','KeyJ','KeyK','KeyL','Semicolon','Quote','Backquote','ShiftLeft'], 30);
+        put(['Backslash','KeyZ','KeyX','KeyC','KeyV','KeyB','KeyN','KeyM','Comma','Period','Slash','ShiftRight','NumpadMultiply','AltLeft','Space','CapsLock'], 43);
+        put(['F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','NumLock','ScrollLock'], 59);
+        put(['Numpad7','Numpad8','Numpad9','NumpadSubtract','Numpad4','Numpad5','Numpad6','NumpadAdd','Numpad1','Numpad2','Numpad3','Numpad0','NumpadDecimal'], 71);
+        put(['F13','F14','F15','F16','F17','F18','F19','F20','F21','F22','F23'], 100);   // G-keys (GKeysInputBridge)
+        Object.assign(m, {
+            1: 'Escape', 87: 'F11', 88: 'F12', 118: 'F24', 156: 'NumpadEnter', 157: 'ControlRight',
+            181: 'NumpadDivide', 183: 'PrintScreen', 184: 'AltRight', 197: 'Pause', 199: 'Home',
+            200: 'ArrowUp', 201: 'PageUp', 203: 'ArrowLeft', 205: 'ArrowRight', 207: 'End',
+            208: 'ArrowDown', 209: 'PageDown', 210: 'Insert', 211: 'Delete',
+            256: 'Mouse1', 257: 'Mouse2', 258: 'Mouse3'
+        });
+        return m;
+    })();
+
+    function setExternalHotkey(dik, payload) {
+        const p = String(payload || '');
+        const a = p.indexOf('|'), b = a < 0 ? -1 : p.indexOf('|', a + 1);
+        if (b < 0) return;
+        const source = p.slice(0, a);
+        const color = parseInt(p.slice(a + 1, b), 10) || 0;
+        const label = p.slice(b + 1).trim();
+        if (!source) return;
+        const code = dik > 0 ? DIK_TO_CODE[dik] : null;
+        if (dik > 0 && !code) { console.warn('HKP: no panel key for DIK', dik, source); return; }
+
+        // drop this source's entry from any other key (the outfit/option moved or was cleared)
+        let changed = false;
+        for (const [keyId, k] of Object.entries(state.keys || {})) {
+            if (!k || !k.layers) continue;
+            for (const [layerId, layer] of Object.entries(k.layers)) {
+                if (layer && layer.source === source && !(keyId === code && layerId === 'default')) {
+                    delete k.layers[layerId];
+                    changed = true;
+                }
+            }
+            if (!Object.keys(k.layers).length) delete state.keys[keyId];
+        }
+        if (code) {
+            ensureKeyLayer(code, 'default');
+            const layer = state.keys[code].layers['default'];
+            layer.label = label;
+            layer.color = color;
+            layer.source = source;
+            changed = true;
+        }
+        if (changed) { refreshAll(); save(); }
+    }
+
+    // ---------------------------------------------------------------
     // Public API
     // ---------------------------------------------------------------
     window.HKP = {
+        setExternalHotkey,
         loadState(json) {
             try {
                 const parsed = typeof json === 'string' ? JSON.parse(json) : json;
