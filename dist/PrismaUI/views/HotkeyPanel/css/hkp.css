@@ -698,7 +698,16 @@ body.hkp-color-mode .hkp-key:not(.hkp-reserved) { cursor: crosshair; }
    --Claude hotkey hub: conflicts, Move Key, mod blocks in the context menu
    ========================================================================= */
 .hkp-key.hkp-conflict,
-.hkp-m-input.hkp-conflict { border: 2px solid #FF3131 !important; }
+.hkp-m-input.hkp-conflict { position: relative; }
+.hkp-conflict-badge {
+    position: absolute; top: 2px; right: 2px; z-index: 3;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: #FF3131; color: #fff; border: 1px solid #fff;
+    font: bold 12px/16px Arial, sans-serif; text-align: center;
+    pointer-events: none; box-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
+}
+.hkp-conflict-tip { width: auto; min-width: 220px; max-width: 420px; text-align: left; white-space: nowrap; }
+.hkp-conflict-tip-head { color: #FF6F61; font-weight: bold; margin-bottom: 4px; }
 
 body.hkp-move-mode .hkp-key.hkp-move-blocked { opacity: 0.25; cursor: not-allowed; }
 body.hkp-move-mode .hkp-m-input.hkp-move-blocked { opacity: 0.25; pointer-events: none; }

@@ -422,6 +422,7 @@
     }
 
     function maybeShowMouseTooltip(el, evt) {
+        if (showConflictTooltip(el)) return;
         const lbl = el.querySelector('.hkp-m-label');
         if (!lbl || !lbl.textContent) return;
         if (lbl.scrollHeight <= lbl.clientHeight + 2 && lbl.scrollWidth <= lbl.clientWidth + 2) return;
@@ -453,10 +454,7 @@
         const reserved = isReservedKey(keyId);
         const isMod = state.modifierKeys.includes(keyId);
         const keyData = viewLayer(keyId, activeLayer);
-        const ext = extByKey[keyId] || [];
-
-        // two mods on one key, or a mod on the panel's own toggle key
-        el.classList.toggle('hkp-conflict', ext.length > 1 || (reserved && ext.length > 0));
+        setConflictBadge(el, conflictOwners(keyId));
         el.classList.toggle('hkp-reserved', reserved);
         el.classList.toggle('hkp-is-modifier', isMod);
         el.classList.toggle('hkp-mod-active', isMod && state.activeModifiers.includes(keyId));
@@ -498,7 +496,7 @@
         const keyId = el.dataset.keyId;
         const isMod = state.modifierKeys.includes(keyId);
         const keyData = viewLayer(keyId, activeLayer);
-        el.classList.toggle('hkp-conflict', (extByKey[keyId] || []).length > 1);
+        setConflictBadge(el, conflictOwners(keyId));
 
         el.classList.toggle('hkp-is-modifier', isMod);
         el.classList.toggle('hkp-mod-active', isMod && state.activeModifiers.includes(keyId));
@@ -775,7 +773,8 @@
     function buildExtItems(keyId) {
         const items = [];
         const ext = extByKey[keyId] || [];
-        if (ext.length > 1) items.push({ note: true, warn: true, label: 'Conflict: ' + ext.length + ' mods use this key' });
+        const owners = conflictOwners(keyId);
+        if (owners.length > 1) items.push({ note: true, warn: true, label: 'Conflict: ' + owners.length + ' actions on this key, remap all but one' });
         ext.forEach(([src, e]) => {
             items.push({ head: true, label: extLabel(src, e) + '  ·  ' + ownerName(src) });
             if (e.move) items.push({ label: 'Move Key…', action: () => startMove(src) });
@@ -1184,6 +1183,7 @@
     // Tooltip for overflowed labels
     // ---------------------------------------------------------------
     function maybeShowTooltip(keyId, el, evt) {
+        if (showConflictTooltip(el)) return;
         const lbl = el.querySelector('.hkp-key-label');
         if (!lbl || !lbl.textContent) return;
         if (lbl.scrollHeight <= lbl.clientHeight + 2 && lbl.scrollWidth <= lbl.clientWidth + 2) return;
@@ -1416,6 +1416,51 @@
     function rebindNote(src) {
         return src.startsWith('MCM:') ? 'Rebind in ' + mcmName(src) + ' MCM' : 'Rebind in ' + ownerName(src);
     }
+    // Everything that fires on this bare key: mod keys, vanilla controls (from the live control
+    // map, so the user's controlmap.txt edits count), and the panel's own toggle key. Two or
+    // more = a real clash that needs remapping; shown as a red ! with this list on hover.
+    function conflictOwners(keyId) {
+        const out = (extByKey[keyId] || []).map(([s, e]) => extLabel(s, e) + '  (' + ownerName(s) + ')');
+        (gameKeys[keyId] || []).forEach(ev => out.push(ev + '  (Skyrim control)'));
+        if (isReservedKey(keyId)) out.push('Open Hotkey Panel  (Hotkey Panel)');
+        return out;
+    }
+    function setConflictBadge(el, owners) {
+        const on = owners.length > 1;
+        el.classList.toggle('hkp-conflict', on);
+        el.dataset.conflict = on ? owners.join('\n') : '';
+        let b = el.querySelector('.hkp-conflict-badge');
+        if (on && !b) {
+            b = document.createElement('div');
+            b.className = 'hkp-conflict-badge';
+            b.textContent = '!';
+            el.appendChild(b);
+        } else if (!on && b) {
+            b.remove();
+        }
+    }
+    function showConflictTooltip(el) {
+        if (!el.dataset.conflict) return false;
+        hideTooltip();
+        const t = document.createElement('div');
+        t.className = 'hkp-tooltip hkp-conflict-tip';
+        const h = document.createElement('div');
+        h.className = 'hkp-conflict-tip-head';
+        h.textContent = 'Key conflict: remap all but one';
+        t.appendChild(h);
+        el.dataset.conflict.split('\n').forEach(line => {
+            const d = document.createElement('div');
+            d.textContent = '• ' + line;
+            t.appendChild(d);
+        });
+        document.body.appendChild(t);
+        const r = el.getBoundingClientRect();
+        t.style.left = Math.max(4, Math.min(r.left + r.width / 2 - 160, window.innerWidth - t.offsetWidth - 4)) + 'px';
+        t.style.top = (r.bottom + t.offsetHeight + 6 > window.innerHeight ? r.top - t.offsetHeight - 6 : r.bottom + 6) + 'px';
+        activeTooltip = t;
+        return true;
+    }
+
     function removeExt(src) {
         delete state.external[src];
         if (state.extCustom) delete state.extCustom[src];
@@ -1485,7 +1530,7 @@
             const code = DIK_TO_CODE[dik];
             if (code && ev) (gameKeys[code] = gameKeys[code] || []).push(ev);
         });
-        if (moveMode) markMoveTargets();
+        refreshAll();   // conflict badges count Skyrim controls too
     }
 
     // ---------------------------------------------------------------
