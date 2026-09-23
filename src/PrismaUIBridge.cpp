@@ -11,6 +11,8 @@
 #include <chrono>
 #include <functional>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <Windows.h>
 
 static PrismaUIBridge* g_bridge = nullptr;
@@ -186,27 +188,90 @@ static std::string BuildFontListJson()
     return json;
 }
 
-// --Claude 2026-09-23 hotkey hub: the vanilla gameplay keyboard binds (after the user's own
-// remaps), as [[dik,"Event"],...]. READ ONLY — writing ControlMap crashes the game (see the
-// ControlMap::ToggleControls gotcha). Move Key uses it so it never offers a key Skyrim uses.
-// Main thread only.
-static std::string BuildGameKeysJson()
+// --Claude 2026-09-23 hotkey hub: the vanilla gameplay keyboard binds as [[dik,"Event"],...].
+// Read from the control map FILE, so the user's own controlmap.txt is the truth:
+//   1. My Games\Skyrim Special Edition\ControlMap_Custom.txt (written when you remap in game)
+//   2. Data\Interface\Controls\PC\controlmap.txt (the MO2 winner, e.g. "Keyboard Controlmap.txt")
+//   3. fallback: the live ControlMap, READ ONLY (writing it crashes the game).
+// Only the "// Main Gameplay" block. Keyboard column: 0xff = unbound, "a,b" = either key
+// (both taken), "a+b" = a combo, which does not occupy the bare key.
+static std::string JsonEsc(const std::string& in)
 {
-    std::string json = "[";
-    auto* cm = RE::ControlMap::GetSingleton();
-    auto* ctx = cm ? cm->controlMap[RE::UserEvents::INPUT_CONTEXT_ID::kGameplay] : nullptr;
-    if (ctx) {
-        bool first = true;
-        for (const auto& m : ctx->deviceMappings[RE::INPUT_DEVICE::kKeyboard]) {
-            if (m.inputKey == 0 || m.inputKey >= 0xFF) continue;   // 0xFF = unbound
-            std::string ev = m.eventID.c_str() ? m.eventID.c_str() : "";
-            std::string esc;
-            for (char c : ev) { if (c == '\\' || c == '"') esc += '\\'; if (static_cast<unsigned char>(c) >= 0x20) esc += c; }
+    std::string esc;
+    for (char c : in) { if (c == '\\' || c == '"') esc += '\\'; if (static_cast<unsigned char>(c) >= 0x20) esc += c; }
+    return esc;
+}
+
+static bool ReadControlMapFile(const std::filesystem::path& path, std::string& json, bool& first, std::string& why)
+{
+    std::ifstream f(path);
+    if (!f) return false;
+    bool inGameplay = false;
+    int binds = 0;
+    std::string line;
+    while (std::getline(f, line)) {
+        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (line.rfind("//", 0) == 0) {
+            if (inGameplay) break;   // next section header ends the gameplay block
+            inGameplay = line.find("Main Gameplay") != std::string::npos;
+            continue;
+        }
+        if (!inGameplay || line.empty()) continue;
+        // columns are tab-separated, runs of tabs = one separator
+        std::vector<std::string> cols;
+        std::string cur;
+        for (char c : line) {
+            if (c == '\t') { if (!cur.empty()) { cols.push_back(cur); cur.clear(); } }
+            else cur += c;
+        }
+        if (!cur.empty()) cols.push_back(cur);
+        if (cols.size() < 2) continue;
+        const std::string& ev = cols[0];
+        std::string kb = cols[1];
+        size_t start = 0;
+        while (start <= kb.size()) {
+            size_t comma = kb.find(',', start);
+            std::string alt = kb.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+            start = comma == std::string::npos ? kb.size() + 1 : comma + 1;
+            if (alt.find('+') != std::string::npos) continue;          // combo
+            const unsigned long code = std::strtoul(alt.c_str(), nullptr, 16);
+            if (code == 0 || code >= 0xFF) continue;                   // unbound
             if (!first) json += ",";
             first = false;
-            json += "[" + std::to_string(m.inputKey) + ",\"" + esc + "\"]";
+            json += "[" + std::to_string(code) + ",\"" + JsonEsc(ev) + "\"]";
+            ++binds;
         }
     }
+    why = path.string() + " (" + std::to_string(binds) + " gameplay keys)";
+    return true;
+}
+
+static std::string BuildGameKeysJson()
+{
+    namespace fs = std::filesystem;
+    std::string json = "[";
+    bool first = true;
+    std::string why;
+    bool ok = false;
+    if (auto logDir = SKSE::log::log_directory())   // ...\My Games\Skyrim Special Edition\SKSE
+        ok = ReadControlMapFile(logDir->parent_path() / "ControlMap_Custom.txt", json, first, why);
+    if (!ok)
+        ok = ReadControlMapFile(fs::current_path() / "Data" / "Interface" / "Controls" / "PC" / "controlmap.txt", json, first, why);
+    if (!ok) {
+        auto* cm = RE::ControlMap::GetSingleton();
+        auto* ctx = cm ? cm->controlMap[RE::UserEvents::INPUT_CONTEXT_ID::kGameplay] : nullptr;
+        if (ctx) {
+            for (const auto& m : ctx->deviceMappings[RE::INPUT_DEVICE::kKeyboard]) {
+                if (m.inputKey == 0 || m.inputKey >= 0xFF) continue;
+                if (m.modifier != 0 && m.modifier < 0xFF) continue;
+                if (!first) json += ",";
+                first = false;
+                json += "[" + std::to_string(m.inputKey) + ",\"" + JsonEsc(m.eventID.c_str() ? m.eventID.c_str() : "") + "\"]";
+            }
+        }
+        why = "live ControlMap (no controlmap file found)";
+    }
+    SKSE::log::info("Game keys for conflicts/Move: {}", why);
     json += "]";
     return json;
 }
