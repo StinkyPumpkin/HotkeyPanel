@@ -10,6 +10,7 @@
 #include <thread>
 #include <chrono>
 #include <functional>
+#include <cstdlib>
 #include <Windows.h>
 
 static PrismaUIBridge* g_bridge = nullptr;
@@ -185,6 +186,31 @@ static std::string BuildFontListJson()
     return json;
 }
 
+// --Claude 2026-09-23 hotkey hub: the vanilla gameplay keyboard binds (after the user's own
+// remaps), as [[dik,"Event"],...]. READ ONLY — writing ControlMap crashes the game (see the
+// ControlMap::ToggleControls gotcha). Move Key uses it so it never offers a key Skyrim uses.
+// Main thread only.
+static std::string BuildGameKeysJson()
+{
+    std::string json = "[";
+    auto* cm = RE::ControlMap::GetSingleton();
+    auto* ctx = cm ? cm->controlMap[RE::UserEvents::INPUT_CONTEXT_ID::kGameplay] : nullptr;
+    if (ctx) {
+        bool first = true;
+        for (const auto& m : ctx->deviceMappings[RE::INPUT_DEVICE::kKeyboard]) {
+            if (m.inputKey == 0 || m.inputKey >= 0xFF) continue;   // 0xFF = unbound
+            std::string ev = m.eventID.c_str() ? m.eventID.c_str() : "";
+            std::string esc;
+            for (char c : ev) { if (c == '\\' || c == '"') esc += '\\'; if (static_cast<unsigned char>(c) >= 0x20) esc += c; }
+            if (!first) json += ",";
+            first = false;
+            json += "[" + std::to_string(m.inputKey) + ",\"" + esc + "\"]";
+        }
+    }
+    json += "]";
+    return json;
+}
+
 // --Claude console guard (pattern proven in PEM, origin: archived sexlab-p-prism
 // MenuVisibilitySink): the input sink's kStop SHOULD swallow tilde, but sink order is
 // registration order — the game's own menu-input handling can run first and open the
@@ -254,6 +280,11 @@ bool PrismaUIBridge::Initialize() {
                 for (const auto& js : g_bridge->m_pendingJS) g_bridge->InvokeJS(js);
                 g_bridge->m_pendingJS.clear();
                 g_bridge->InvokeJS("HKP.setFonts(" + BuildFontListJson() + ")");
+                if (auto* tasks = SKSE::GetTaskInterface()) {
+                    tasks->AddTask([]() {
+                        if (g_bridge) g_bridge->InvokeJS("HKP.setGameKeys(" + BuildGameKeysJson() + ")");
+                    });
+                }
             }
         });
 
@@ -367,6 +398,29 @@ void PrismaUIBridge::RegisterJSListeners() {
     // inline mouse inputs), "0" when it blurs. Gates the close keys in InputHandler.
     m_api->RegisterJSListener(m_view, "hkpTextInput", [](const char* data) {
         if (g_bridge) g_bridge->SetTextInputActive(data && data[0] == '1');
+    });
+
+    // --Claude 2026-09-23 hotkey hub: JS → DLL "source|dik". Asks the mod that owns `source`
+    // to move its key: SKSE mod event HKP_MoveHotkey (strArg = source, numArg = new DX scan
+    // code). The owner applies it and re-announces through HKP_SetHotkey, which is what
+    // actually moves the key in the panel; a refusal re-announces the old key.
+    m_api->RegisterJSListener(m_view, "hkpMoveHotkey", [](const char* data) {
+        std::string s = data ? data : "";
+        const auto bar = s.rfind('|');
+        if (bar == std::string::npos || bar == 0) return;
+        std::string source = s.substr(0, bar);
+        const float dik = static_cast<float>(std::atoi(s.c_str() + bar + 1));
+        if (dik <= 0.0f) return;
+        SKSE::log::info("UI: hkpMoveHotkey '{}' -> {}", source, dik);
+        if (auto* task = SKSE::GetTaskInterface()) {
+            task->AddTask([source = std::move(source), dik]() {
+                if (auto* src = SKSE::GetModCallbackEventSource()) {
+                    SKSE::ModCallbackEvent evt{ RE::BSFixedString("HKP_MoveHotkey"),
+                                                RE::BSFixedString(source), dik, nullptr };
+                    src->SendEvent(&evt);
+                }
+            });
+        }
     });
 
     SKSE::log::info("PrismaUIBridge: JS listeners registered");

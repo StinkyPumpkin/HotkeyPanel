@@ -693,3 +693,21 @@ body.hkp-color-mode .hkp-key:not(.hkp-reserved) { cursor: crosshair; }
     background: #1a1206;
     box-shadow: 0 0 4px rgba(0, 0, 0, 0.85);
 }
+
+/* =========================================================================
+   --Claude hotkey hub: conflicts, Move Key, mod blocks in the context menu
+   ========================================================================= */
+.hkp-key.hkp-conflict,
+.hkp-m-input.hkp-conflict { border: 2px solid #FF3131 !important; }
+
+body.hkp-move-mode .hkp-key.hkp-move-blocked { opacity: 0.25; cursor: not-allowed; }
+body.hkp-move-mode .hkp-m-input.hkp-move-blocked { opacity: 0.25; pointer-events: none; }
+body.hkp-move-mode .hkp-key.hkp-move-target { cursor: crosshair; border: 2px dashed var(--hkp-gold-hi) !important; }
+body.hkp-move-mode .hkp-key.hkp-move-target:hover { background: #3a3a2a !important; }
+
+.hkp-ctx-head {
+    padding: 8px 16px 2px; font-size: 12px; color: var(--hkp-gold-hi);
+    letter-spacing: 0.03em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 360px;
+}
+.hkp-ctx-note { padding: 4px 16px 6px; font-size: 12px; font-style: italic; color: #9a948a; }
+.hkp-ctx-note.hkp-ctx-warn { color: #FF6F61; font-style: normal; }

@@ -164,7 +164,12 @@
         modifierKeys: [],
         activeModifiers: [],
         activeTapMode: 'single',    // 'single' | 'double' | 'long'
-        keys: {}
+        keys: {},
+        // --Claude hotkey hub: keys other mods own, one entry per source id (see setExternalHotkey).
+        // { [source]: { key: 'KeyG', label, color, move } }; extCustom holds the user's own
+        // name/colour for a source so they survive the owner re-announcing its keys.
+        external: {},
+        extCustom: {}
     };
 
     const TAP_MODES = ['single', 'double', 'long'];
@@ -174,12 +179,19 @@
     let colorMode = null;
     let pendingEditKey = null;
     let pendingEditLayer = null;
+    let pendingEditSource = null;   // renaming a mod's key instead of a panel label
     let pendingProfileCallback = null;
     let pendingConfirmCallback = null;
     let bindingToggleKey = false;
     let saveDebounce = null;
     let activeTooltip = null;
     let settingsOpen = false;
+    let extByKey = {};        // keyId -> [[source, entry], ...], rebuilt by refreshAll
+    let gameKeys = {};        // keyId -> ['Activate', ...] vanilla gameplay binds, from the DLL
+    let moveMode = null;      // { source, label } while picking a new key for a mod's hotkey
+    let pendingMove = null;   // { source, code, label, timer } until the owner answers
+    let statusMsg = null;     // short message in the swatch bar
+    let statusTimer = null;
 
     // ---------------------------------------------------------------
     // Bootstrap
@@ -428,18 +440,23 @@
     // Refresh (apply state → DOM for all keys + mouse inputs)
     // ---------------------------------------------------------------
     function refreshAll() {
+        rebuildExtIndex();
         const activeLayer = currentLayerId();
         const activeProf = state.activeProfile;
         document.querySelectorAll('.hkp-key').forEach(el => applyKeyVisual(el, activeLayer, activeProf));
         document.querySelectorAll('.hkp-m-input').forEach(el => applyMouseVisual(el, activeLayer, activeProf));
+        if (moveMode) markMoveTargets();
     }
 
     function applyKeyVisual(el, activeLayer, activeProf) {
         const keyId = el.dataset.keyId;
         const reserved = isReservedKey(keyId);
         const isMod = state.modifierKeys.includes(keyId);
-        const keyData = getKeyLayer(keyId, activeLayer);
+        const keyData = viewLayer(keyId, activeLayer);
+        const ext = extByKey[keyId] || [];
 
+        // two mods on one key, or a mod on the panel's own toggle key
+        el.classList.toggle('hkp-conflict', ext.length > 1 || (reserved && ext.length > 0));
         el.classList.toggle('hkp-reserved', reserved);
         el.classList.toggle('hkp-is-modifier', isMod);
         el.classList.toggle('hkp-mod-active', isMod && state.activeModifiers.includes(keyId));
@@ -480,7 +497,8 @@
     function applyMouseVisual(el, activeLayer, activeProf) {
         const keyId = el.dataset.keyId;
         const isMod = state.modifierKeys.includes(keyId);
-        const keyData = getKeyLayer(keyId, activeLayer);
+        const keyData = viewLayer(keyId, activeLayer);
+        el.classList.toggle('hkp-conflict', (extByKey[keyId] || []).length > 1);
 
         el.classList.toggle('hkp-is-modifier', isMod);
         el.classList.toggle('hkp-mod-active', isMod && state.activeModifiers.includes(keyId));
@@ -575,6 +593,7 @@
     }
 
     function onKeyClick(keyId, el) {
+        if (moveMode) { if (isMoveTarget(keyId)) finishMove(keyId); return; }
         if (isReservedKey(keyId)) return;
         if (state.modifierKeys.includes(keyId)) { toggleActiveModifier(keyId); return; }
         if (colorMode !== null) { applyColor(keyId); return; }
@@ -597,8 +616,8 @@
     function canTriggerKey(keyId) {
         if (isReservedKey(keyId)) return false;
         if (state.modifierKeys.includes(keyId)) return false;
-        if (colorMode !== null) return false;
-        const keyData = getKeyLayer(keyId, currentLayerId());
+        if (colorMode !== null || moveMode) return false;
+        const keyData = viewLayer(keyId, currentLayerId());
         return !!(keyData && keyData.label);
     }
 
@@ -693,6 +712,16 @@
 
     function applyColor(keyId) {
         const layer = currentLayerId();
+        // A mod's key: the colour is the user's override for that source (clear = the mod's own).
+        if (layer === 'default' && state.activeProfile === 'DEFAULT' && (extByKey[keyId] || []).length) {
+            extByKey[keyId].forEach(([src]) => {
+                const c = customFor(src, colorMode.swatchIdx !== 0);
+                if (!c) return;
+                if (colorMode.swatchIdx === 0) delete c.color; else c.color = colorMode.swatchIdx;
+            });
+            refreshAll(); save();
+            return;
+        }
         ensureKeyLayer(keyId, layer);
         const entry = state.keys[keyId].layers[layer];
         if (state.activeProfile === 'DEFAULT') {
@@ -712,7 +741,13 @@
     }
 
     function onKeyContext(keyId, el, evt) {
-        if (isReservedKey(keyId)) return;
+        if (moveMode) { exitMoveMode(); return; }
+        if (isReservedKey(keyId)) {
+            // the toggle key has no menu of its own, but a mod bound on it still needs Move
+            if ((extByKey[keyId] || []).length && currentLayerId() === 'default')
+                showContextMenu(evt.clientX, evt.clientY, buildExtItems(keyId));
+            return;
+        }
         if (state.activeProfile !== 'DEFAULT') {
             showContextMenu(evt.clientX, evt.clientY, buildProfileContextMenu(keyId));
             return;
@@ -723,13 +758,38 @@
     function buildDefaultContextMenu(keyId) {
         const layer = currentLayerId();
         const isMod = state.modifierKeys.includes(keyId);
-        return [
-            { label: 'Edit name…', action: () => startEditName(keyId, layer) },
+        const hasExt = layer === 'default' && (extByKey[keyId] || []).length > 0;
+        const items = layer === 'default' ? buildExtItems(keyId) : [];
+        if (!hasExt) items.push({ label: 'Edit name…', action: () => startEditName(keyId, layer) });
+        items.push(
             { label: isMod ? 'Unmark as modifier' : 'Mark as modifier',
               action: () => toggleModifierFlag(keyId) },
             { sep: true },
             { label: 'Reset key', danger: true, action: () => resetKey(keyId) }
-        ];
+        );
+        return items;
+    }
+
+    // --Claude hotkey hub: one block per mod that owns this key. Move Key only for owners that
+    // said they take moves ("move" flag); the rest (MCM binds) get a note to rebind at the source.
+    function buildExtItems(keyId) {
+        const items = [];
+        const ext = extByKey[keyId] || [];
+        if (ext.length > 1) items.push({ note: true, warn: true, label: 'Conflict: ' + ext.length + ' mods use this key' });
+        ext.forEach(([src, e]) => {
+            items.push({ head: true, label: extLabel(src, e) + '  ·  ' + ownerName(src) });
+            if (e.move) items.push({ label: 'Move Key…', action: () => startMove(src) });
+            else        items.push({ note: true, label: rebindNote(src) });
+            items.push({ label: 'Rename…', action: () => startEditExtName(src) });
+            items.push({ label: 'Remove from panel', danger: true, action: () => removeExt(src) });
+            items.push({ sep: true });
+        });
+        const game = gameKeys[keyId];
+        if (game && game.length) {
+            items.push({ note: true, label: 'Skyrim: ' + game.join(', ') });
+            items.push({ sep: true });
+        }
+        return items;
     }
     function buildProfileContextMenu(keyId) {
         const prof = state.activeProfile;
@@ -794,7 +854,28 @@
         document.getElementById('hkp-modal-edit').classList.remove('hkp-hidden');
         setTimeout(() => { input.focus(); input.select(); }, 30);
     }
+    // Rename a mod's key: stored as the user's override for that source; empty = the mod's name.
+    function startEditExtName(src) {
+        const e = state.external[src];
+        if (!e) return;
+        pendingEditSource = src; pendingEditKey = null; pendingEditLayer = null;
+        const input = document.getElementById('hkp-modal-edit-input');
+        input.value = extLabel(src, e);
+        document.getElementById('hkp-modal-edit').classList.remove('hkp-hidden');
+        setTimeout(() => { input.focus(); input.select(); }, 30);
+    }
     function saveEditInternal() {
+        if (pendingEditSource) {
+            const src = pendingEditSource;
+            pendingEditSource = null;
+            const val = document.getElementById('hkp-modal-edit-input').value.trim();
+            const e = state.external[src];
+            const c = customFor(src, !!val && !!e && val !== e.label);
+            if (c) { if (val && e && val !== e.label) c.label = val; else delete c.label; }
+            document.getElementById('hkp-modal-edit').classList.add('hkp-hidden');
+            refreshAll(); save();
+            return;
+        }
         if (!pendingEditKey) return;
         const val = document.getElementById('hkp-modal-edit-input').value.trim();
         ensureKeyLayer(pendingEditKey, pendingEditLayer);
@@ -812,9 +893,16 @@
         menu.innerHTML = '';
         items.forEach(it => {
             if (it.sep) {
+                // no leading, trailing or doubled separators
+                if (!menu.lastChild || menu.lastChild.className === 'hkp-ctx-sep') return;
                 const s = document.createElement('div');
                 s.className = 'hkp-ctx-sep';
                 menu.appendChild(s);
+            } else if (it.head || it.note) {
+                const d = document.createElement('div');
+                d.className = it.head ? 'hkp-ctx-head' : 'hkp-ctx-note' + (it.warn ? ' hkp-ctx-warn' : '');
+                d.textContent = it.label;
+                menu.appendChild(d);
             } else {
                 const b = document.createElement('button');
                 b.className = 'hkp-ctx-item' + (it.danger ? ' hkp-ctx-danger' : '');
@@ -823,9 +911,12 @@
                 menu.appendChild(b);
             }
         });
+        if (menu.lastChild && menu.lastChild.className === 'hkp-ctx-sep') menu.removeChild(menu.lastChild);
         menu.style.left = Math.min(x, window.innerWidth - 240) + 'px';
-        menu.style.top = Math.min(y, window.innerHeight - 200) + 'px';
+        menu.style.top = y + 'px';
         menu.classList.remove('hkp-hidden');
+        // measured after it is visible: mod blocks make the menu taller than the old fixed 200px
+        menu.style.top = Math.max(0, Math.min(y, window.innerHeight - menu.offsetHeight - 4)) + 'px';
     }
     function hideContextMenu() { document.getElementById('hkp-ctx-menu').classList.add('hkp-hidden'); }
 
@@ -845,6 +936,7 @@
         }
     }
     function pickSwatch(idx) {
+        if (moveMode) exitMoveMode();
         if (colorMode && colorMode.swatchIdx === idx) { exitColorMode(); return; }
         colorMode = { swatchIdx: idx };
         document.body.classList.add('hkp-color-mode');
@@ -871,6 +963,13 @@
     function updateSwatchBarLabel() {
         const el = document.getElementById('hkp-swatch-label');
         if (!el) return;
+        if (moveMode || statusMsg) {
+            el.textContent = moveMode
+                ? 'Moving "' + moveMode.label + '": click an empty key. ESC or right-click cancels.'
+                : statusMsg;
+            el.classList.remove('hkp-swatch-label-tap');
+            return;
+        }
         if (colorMode) {
             const forProf = state.activeProfile !== 'DEFAULT'
                 ? ` (applies to "${state.activeProfile}" profile only)` : '';
@@ -1171,6 +1270,7 @@
                 if (!document.getElementById('hkp-modal-profile').classList.contains('hkp-hidden')) { cancelProfile(); return; }
                 if (!document.getElementById('hkp-ctx-menu').classList.contains('hkp-hidden'))     { hideContextMenu(); return; }
                 if (fontDDOpen) { closeFontDD(); return; }
+                if (moveMode) { exitMoveMode(); return; }
                 if (colorMode !== null) { exitColorMode(); return; }
                 if (settingsOpen) { toggleSettings(); return; }
                 // Otherwise close the UI
@@ -1192,16 +1292,21 @@
     }
 
     function confirmCancel() { document.getElementById('hkp-modal-confirm').classList.add('hkp-hidden'); pendingConfirmCallback = null; }
-    function cancelEdit() { pendingEditKey = null; document.getElementById('hkp-modal-edit').classList.add('hkp-hidden'); }
+    function cancelEdit() { pendingEditKey = null; pendingEditSource = null; document.getElementById('hkp-modal-edit').classList.add('hkp-hidden'); }
     function cancelProfile() { pendingProfileCallback = null; document.getElementById('hkp-modal-profile').classList.add('hkp-hidden'); }
 
     // ---------------------------------------------------------------
     // External hotkeys (--Claude 2026-09-23)
     // Other mods announce their keys through the SKSE mod event HKP_SetHotkey; the DLL
     // forwards them here. PEM sends outfit hotkeys (outfit name, green), MCM Unlocked sends
-    // every MCM key bind ("<MCM>: <option>", blue). Each entry carries a `source` id, so when
-    // the same outfit/option moves to a new key its old key's entry is dropped. Written to
-    // the DEFAULT layer (single tap, no modifier) of the key; profiles untouched.
+    // every MCM key bind ("<MCM>: <option>", blue).
+    // Hotkey hub (same day): each source id is ONE entry in state.external, apart from the
+    // user's own labels, so two mods on one key are both kept and shown as a conflict instead
+    // of the second overwriting the first. They show on the DEFAULT layer (single tap, no
+    // modifier) only. strArg = "source|colour[,move]|label":
+    //   move      = the owner listens for HKP_MoveHotkey, so the panel offers Move Key
+    //   source*   = with key 0, forget every entry whose source starts with that prefix
+    //               (an owner re-syncing its whole list, e.g. PEM on game load)
     // ---------------------------------------------------------------
     const DIK_TO_CODE = (() => {
         const m = {};
@@ -1223,45 +1328,171 @@
         return m;
     })();
 
+    const CODE_TO_DIK = (() => {
+        const m = {};
+        for (const [dik, code] of Object.entries(DIK_TO_CODE)) m[code] = Number(dik);
+        return m;
+    })();
+
     function setExternalHotkey(dik, payload) {
         const p = String(payload || '');
         const a = p.indexOf('|'), b = a < 0 ? -1 : p.indexOf('|', a + 1);
         if (b < 0) return;
         const source = p.slice(0, a);
-        const color = parseInt(p.slice(a + 1, b), 10) || 0;
+        const flags = p.slice(a + 1, b).split(',');
+        const color = parseInt(flags[0], 10) || 0;
+        const move = flags.indexOf('move') > 0;
         const label = p.slice(b + 1).trim();
         if (!source) return;
+        if (!state.external) state.external = {};
+
+        if (source.endsWith('*')) {
+            const pre = source.slice(0, -1);
+            for (const s of Object.keys(state.external)) if (s.startsWith(pre)) delete state.external[s];
+            refreshAll(); save();
+            return;
+        }
+
         const code = dik > 0 ? DIK_TO_CODE[dik] : null;
         if (dik > 0 && !code) { console.warn('HKP: no panel key for DIK', dik, source); return; }
+        if (code) state.external[source] = { key: code, label, color, move };
+        else delete state.external[source];
 
-        // drop this source's entry from any other key (the outfit/option moved or was cleared)
-        let changed = false;
-        for (const [keyId, k] of Object.entries(state.keys || {})) {
-            if (!k || !k.layers) continue;
-            for (const [layerId, layer] of Object.entries(k.layers)) {
-                if (layer && layer.source === source && !(keyId === code && layerId === 'default')) {
-                    delete k.layers[layerId];
-                    changed = true;
-                }
-            }
-            if (!Object.keys(k.layers).length) delete state.keys[keyId];
+        if (pendingMove && pendingMove.source === source) {
+            clearTimeout(pendingMove.timer);
+            const where = KEY_CAPTION[pendingMove.code] || pendingMove.code;
+            flashStatus(code === pendingMove.code
+                ? 'Moved "' + pendingMove.label + '" to ' + where + '.'
+                : ownerName(source) + ' refused ' + where + '. "' + pendingMove.label + '" kept its key.');
+            pendingMove = null;
         }
-        if (code) {
-            ensureKeyLayer(code, 'default');
-            const layer = state.keys[code].layers['default'];
-            layer.label = label;
-            layer.color = color;
-            layer.source = source;
-            changed = true;
+        refreshAll(); save();
+    }
+
+    // ----- hub helpers -----
+    function rebuildExtIndex() {
+        extByKey = {};
+        for (const [src, e] of Object.entries(state.external || {})) {
+            if (!e || !e.key) continue;
+            (extByKey[e.key] = extByKey[e.key] || []).push([src, e]);
         }
-        if (changed) { refreshAll(); save(); }
+    }
+    // The user's name/colour for a source; created on demand when `create`.
+    function customFor(src, create) {
+        if (!state.extCustom) state.extCustom = {};
+        if (!state.extCustom[src] && create) state.extCustom[src] = {};
+        return state.extCustom[src] || null;
+    }
+    function extLabel(src, e) {
+        const c = state.extCustom && state.extCustom[src];
+        return (c && c.label) || (e && e.label) || src;
+    }
+    function extColor(src, e) {
+        const c = state.extCustom && state.extCustom[src];
+        return (c && c.color != null) ? c.color : ((e && e.color) || 0);
+    }
+    // What a key shows in a layer: its mods' keys on the default layer, else the panel label.
+    function viewLayer(keyId, layerId) {
+        const own = getKeyLayer(keyId, layerId);
+        const ext = layerId === 'default' ? extByKey[keyId] : null;
+        if (!ext || !ext.length) return own;
+        return {
+            label: ext.map(([s, e]) => extLabel(s, e)).join(' / '),
+            color: extColor(ext[0][0], ext[0][1]),
+            profiles: own && own.profiles,
+            profileColors: own && own.profileColors
+        };
+    }
+    // "PEM:outfit:3" -> "PEM"; "MCM:SexLab:Hotkeys:12" -> "SexLab"
+    function mcmName(src) {
+        const parts = src.slice(4).split(':');
+        return parts.length > 2 ? parts.slice(0, -2).join(':') : parts[0];
+    }
+    function ownerName(src) {
+        if (src.startsWith('MCM:')) return mcmName(src) + ' MCM';
+        const i = src.indexOf(':');
+        return i > 0 ? src.slice(0, i) : src;
+    }
+    function rebindNote(src) {
+        return src.startsWith('MCM:') ? 'Rebind in ' + mcmName(src) + ' MCM' : 'Rebind in ' + ownerName(src);
+    }
+    function removeExt(src) {
+        delete state.external[src];
+        if (state.extCustom) delete state.extCustom[src];
+        refreshAll(); save();
+    }
+    function flashStatus(msg, ms) {
+        statusMsg = msg;
+        if (statusTimer) clearTimeout(statusTimer);
+        statusTimer = ms === 0 ? null : setTimeout(() => { statusMsg = null; statusTimer = null; updateSwatchBarLabel(); }, ms || 5000);
+        updateSwatchBarLabel();
+    }
+
+    // ----- Move Key -----
+    // An empty key: a real keyboard key with a scan code, no mod key, no panel label, not the
+    // panel's toggle, not a modifier, and not bound to a vanilla gameplay control.
+    function isMoveTarget(keyId) {
+        const dik = CODE_TO_DIK[keyId];
+        if (!dik || dik >= 256 || keyId === 'Escape') return false;
+        if (isReservedKey(keyId) || state.modifierKeys.includes(keyId)) return false;
+        if ((extByKey[keyId] || []).length || gameKeys[keyId]) return false;
+        const own = getKeyLayer(keyId, 'default');
+        return !(own && own.label);
+    }
+    function markMoveTargets() {
+        document.querySelectorAll('.hkp-key, .hkp-m-input').forEach(el => {
+            const ok = !!moveMode && el.classList.contains('hkp-key') && isMoveTarget(el.dataset.keyId);
+            el.classList.toggle('hkp-move-target', ok);
+            el.classList.toggle('hkp-move-blocked', !!moveMode && !ok);
+        });
+    }
+    function startMove(src) {
+        const e = state.external[src];
+        if (!e) return;
+        if (colorMode) exitColorMode();
+        cancelHold();
+        moveMode = { source: src, label: extLabel(src, e) };
+        document.body.classList.add('hkp-move-mode');
+        markMoveTargets();
+        updateSwatchBarLabel();
+    }
+    function exitMoveMode() {
+        moveMode = null;
+        document.body.classList.remove('hkp-move-mode');
+        markMoveTargets();
+        updateSwatchBarLabel();
+    }
+    // Nothing moves here: the owner applies the key and re-announces it (setExternalHotkey).
+    function finishMove(keyId) {
+        const src = moveMode.source, label = moveMode.label;
+        exitMoveMode();
+        if (pendingMove) clearTimeout(pendingMove.timer);
+        pendingMove = {
+            source: src, code: keyId, label,
+            timer: setTimeout(() => {
+                pendingMove = null;
+                flashStatus(ownerName(src) + ' did not answer. "' + label + '" was not moved.');
+            }, 4000)
+        };
+        flashStatus('Moving "' + label + '" to ' + (KEY_CAPTION[keyId] || keyId) + '…', 0);
+        dispatchToBridge('hkpMoveHotkey', src + '|' + CODE_TO_DIK[keyId]);
+    }
+    function setGameKeys(list) {
+        gameKeys = {};
+        let arr = list;
+        try { if (typeof list === 'string') arr = JSON.parse(list); } catch (_) { arr = []; }
+        (Array.isArray(arr) ? arr : []).forEach(([dik, ev]) => {
+            const code = DIK_TO_CODE[dik];
+            if (code && ev) (gameKeys[code] = gameKeys[code] || []).push(ev);
+        });
+        if (moveMode) markMoveTargets();
     }
 
     // ---------------------------------------------------------------
     // Public API
     // ---------------------------------------------------------------
     window.HKP = {
-        setExternalHotkey,
+        setExternalHotkey, setGameKeys,
         loadState(json) {
             try {
                 const parsed = typeof json === 'string' ? JSON.parse(json) : json;
@@ -1269,6 +1500,20 @@
                 if (!state.profiles || !state.profiles.length) state.profiles = [{ name: 'DEFAULT', system: true }];
                 state.activeModifiers = [];
                 if (!state.activeTapMode) state.activeTapMode = 'single';
+                if (!state.external || typeof state.external !== 'object') state.external = {};
+                if (!state.extCustom || typeof state.extCustom !== 'object') state.extCustom = {};
+                // b66da8c wrote mod keys into the key's own default layer, tagged `source`;
+                // move them into the registry (the owner adds the move flag on its next announce).
+                for (const [keyId, k] of Object.entries(state.keys || {})) {
+                    if (!k || !k.layers) continue;
+                    for (const [layerId, layer] of Object.entries(k.layers)) {
+                        if (!layer || !layer.source) continue;
+                        if (!state.external[layer.source])
+                            state.external[layer.source] = { key: keyId, label: layer.label || '', color: layer.color || 0, move: false };
+                        delete k.layers[layerId];
+                    }
+                    if (!Object.keys(k.layers).length) delete state.keys[keyId];
+                }
                 renderProfiles(); refreshAll(); updateModifierBadge(); applyTapModeBg(); applyLabelSize(); applyPanelScale(); applyPanelOpacity(); applyFont(); syncFontButton(); updateSwatchBarLabel();
                 if (settingsOpen) syncSettingsInputs();
                 // Tell the DLL about the persisted toggle key so its input
@@ -1285,6 +1530,7 @@
         hide() {
             document.getElementById('hkp-root').classList.add('hkp-hidden');
             hideContextMenu(); hideTooltip();
+            if (moveMode) exitMoveMode();
             if (colorMode) exitColorMode();
             if (settingsOpen) toggleSettings();
         },
