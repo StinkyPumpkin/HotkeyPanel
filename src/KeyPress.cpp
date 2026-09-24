@@ -5,8 +5,12 @@
 #include <REL/Relocation.h>
 #include <SKSE/SKSE.h>
 
+#include <atomic>
+#include <chrono>
 #include <memory>
 #include <string>
+#include <thread>
+#include <vector>
 
 namespace {
 
@@ -19,10 +23,9 @@ namespace {
     //
     // Why this and not SendInput/keybd_event: those go through Windows, and Skyrim's
     // input devices read DirectInput state. SendInput-injected keys are exactly what
-    // DirectInput fails to carry - that is why the G-key bridge exists at all.
-    // Driving the engine's own button state machine means the ENGINE queues the
-    // ButtonEvent, so SKSE sinks, Papyrus RegisterForKey and MCM capture all see a
-    // normal key.
+    // DirectInput fails to carry. Driving the engine's own button state machine means
+    // the ENGINE queues the ButtonEvent, so SKSE sinks, Papyrus RegisterForKey and
+    // MCM capture all see a normal key.
     void SetButtonState(RE::BSInputDevice* a_dev, std::uint32_t a_button, float a_dt,
                         bool a_wasDown, bool a_isDown) {
         using Fn = void(RE::BSInputDevice*, std::uint32_t, float, bool, bool);
@@ -30,21 +33,26 @@ namespace {
         func(a_dev, a_button, a_dt, a_wasDown, a_isDown);
     }
 
-    constexpr float        kFrameDt     = 0.016f;
-    constexpr std::uint32_t kMouseBase  = 256;   // panel codes 256..258 = mouse 1-3
+    constexpr float         kFrameDt   = 0.016f;
+    constexpr std::uint32_t kMouseBase = 256;   // panel codes 256..258 = mouse 1-3
 
-    // One scheduled edge. dt/wasDown/isDown are exactly what SetButtonState wants;
-    // waitFrames is how many frames to idle BEFORE applying it.
+    // One edge, with a REAL delay before it.
+    //
+    // --Claude 2026-09-15, second pass. The first version counted frames by chaining
+    // SKSE AddTask calls, assuming one task = one frame. That is false: a task added
+    // from inside a task is drained in the SAME pass, so the whole chain ran in one
+    // frame. The log caught it red-handed - "queued" and "still not live after 120
+    // frames, dropping" landed on the identical millisecond. Everything here is wall
+    // clock now, slept on a worker thread; only the engine calls are marshalled back
+    // onto the main thread.
     struct Edge {
-        int           waitFrames;
-        std::uint32_t code;      // unified panel code
+        int           delayMs;
+        std::uint32_t code;
         float         dt;
         bool          wasDown;
         bool          isDown;
     };
 
-    // Resolve a unified panel code to its device + device-local button index.
-    // Mouse wheel codes (264/265) are axes, not buttons, and are refused.
     bool Resolve(std::uint32_t a_code, RE::BSInputDevice*& a_outDev, std::uint32_t& a_outButton) {
         auto* mgr = RE::BSInputDeviceManager::GetSingleton();
         if (!mgr) return false;
@@ -59,17 +67,13 @@ namespace {
         return a_outDev != nullptr;
     }
 
-    // --Claude 2026-09-15: input is only LIVE once the panel is fully torn down.
+    // Input is only LIVE once the panel is fully torn down. Closing it often leaves
+    // the Cursor Menu stuck, and HKPFocusRecovery then pulses the Console open/closed
+    // to rebuild the mouse/menu input state (~200ms after the close, done by ~385ms).
+    // A key fired inside that window IS delivered, but it arrives in menu mode where
+    // every mod's hotkey handler ignores it.
     //
-    // A fixed frame delay was wrong. Closing the panel often leaves the Cursor Menu
-    // stuck, and HKPFocusRecovery then pulses the Console open/closed to rebuild the
-    // mouse/menu input state - measured at ~200ms after the close, finishing ~385ms.
-    // A key fired inside that window IS delivered, but it arrives in menu mode, where
-    // every mod's hotkey handler ignores it. That is exactly why M, F1, Numpad0 and
-    // SLUI's key all queued cleanly in the log and did nothing.
-    //
-    // So gate on the actual condition rather than guessing a number: hold the script
-    // until the game is unpaused and neither the Console nor the Cursor Menu is open.
+    // MAIN THREAD ONLY - called from inside an AddTask.
     bool InputIsLive() {
         auto* ui = RE::UI::GetSingleton();
         if (!ui) return false;
@@ -79,63 +83,60 @@ namespace {
         return true;
     }
 
-    void RunFrom(std::shared_ptr<std::vector<Edge>> a_script, std::size_t a_index, int a_waited);
+    // -1 unknown / 0 no / 1 yes. Written on the main thread, read by the worker.
+    std::atomic<int> g_liveProbe{ -1 };
 
-    void Schedule(std::shared_ptr<std::vector<Edge>> a_script, std::size_t a_index, int a_waited) {
-        if (auto* task = SKSE::GetTaskInterface()) {
-            task->AddTask([a_script, a_index, a_waited]() { RunFrom(a_script, a_index, a_waited); });
+    constexpr int kProbeIntervalMs = 50;
+    constexpr int kMaxGateMs       = 4000;
+
+    void Worker(std::shared_ptr<std::vector<Edge>> a_script) {
+        using namespace std::chrono_literals;
+
+        // Gate: poll the real condition on the main thread until input is live.
+        int waitedMs = 0;
+        bool live = false;
+        while (waitedMs < kMaxGateMs) {
+            g_liveProbe.store(-1, std::memory_order_relaxed);
+            if (auto* task = SKSE::GetTaskInterface()) {
+                task->AddTask([]() {
+                    g_liveProbe.store(InputIsLive() ? 1 : 0, std::memory_order_relaxed);
+                });
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(kProbeIntervalMs));
+            waitedMs += kProbeIntervalMs;
+            if (g_liveProbe.load(std::memory_order_relaxed) == 1) { live = true; break; }
+        }
+
+        if (!live) {
+            SKSE::log::warn("KeyPress: input still not live after {} ms, dropping the press", waitedMs);
+            return;
+        }
+        SKSE::log::info("KeyPress: input live after {} ms, firing", waitedMs);
+
+        for (const auto& e : *a_script) {
+            if (e.delayMs > 0) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(e.delayMs));
+            }
+            Edge edge = e;
+            if (auto* task = SKSE::GetTaskInterface()) {
+                task->AddTask([edge]() {
+                    RE::BSInputDevice* dev = nullptr;
+                    std::uint32_t      button = 0;
+                    if (Resolve(edge.code, dev, button)) {
+                        SetButtonState(dev, button, edge.dt, edge.wasDown, edge.isDown);
+                    } else {
+                        SKSE::log::warn("KeyPress: cannot resolve code {} to a device button", edge.code);
+                    }
+                });
+            }
         }
     }
 
-    // Frames to keep waiting for InputIsLive() before giving up. ~2s at 60fps: long
-    // enough for the console pulse, short enough that a genuinely stuck menu does not
-    // leave a key press queued indefinitely.
-    constexpr int kMaxGateFrames = 120;
-
-    void GateThen(std::shared_ptr<std::vector<Edge>> a_script, int a_waited) {
-        if (InputIsLive()) {
-            SKSE::log::info("KeyPress: input live after {} frame(s), firing", a_waited);
-            Schedule(a_script, 0, 0);
-            return;
-        }
-        if (a_waited >= kMaxGateFrames) {
-            SKSE::log::warn("KeyPress: input still not live after {} frames, dropping the press", a_waited);
-            return;
-        }
-        if (auto* task = SKSE::GetTaskInterface()) {
-            task->AddTask([a_script, a_waited]() { GateThen(a_script, a_waited + 1); });
-        }
-    }
-
-    // Walks the script one frame at a time. Each AddTask lands on the next game
-    // frame, so the "waited" counter is a frame counter.
-    void RunFrom(std::shared_ptr<std::vector<Edge>> a_script, std::size_t a_index, int a_waited) {
-        if (!a_script || a_index >= a_script->size()) return;
-        const Edge& e = (*a_script)[a_index];
-
-        if (a_waited < e.waitFrames) {
-            Schedule(a_script, a_index, a_waited + 1);
-            return;
-        }
-
-        RE::BSInputDevice* dev = nullptr;
-        std::uint32_t      button = 0;
-        if (Resolve(e.code, dev, button)) {
-            SetButtonState(dev, button, e.dt, e.wasDown, e.isDown);
-        } else {
-            SKSE::log::warn("KeyPress: cannot resolve code {} to a device button", e.code);
-        }
-
-        Schedule(a_script, a_index + 1, 0);
-    }
-
-    // Append one press of a_code lasting a_holdFrames, after a_leadFrames of idle.
-    void AppendPress(std::vector<Edge>& a_out, std::uint32_t a_code, int a_leadFrames, int a_holdFrames) {
-        a_out.push_back({ a_leadFrames, a_code, 0.0f, false, true });          // down edge
-        for (int i = 0; i < a_holdFrames; ++i) {
-            a_out.push_back({ 1, a_code, kFrameDt, true, true });              // held
-        }
-        a_out.push_back({ 1, a_code, kFrameDt, true, false });                 // up edge
+    // Append one press of a_code lasting a_holdMs, after a_leadMs of idle.
+    void AppendPress(std::vector<Edge>& a_out, std::uint32_t a_code, int a_leadMs, int a_holdMs) {
+        a_out.push_back({ a_leadMs, a_code, 0.0f, false, true });    // down edge
+        a_out.push_back({ a_holdMs, a_code, kFrameDt, true, true }); // still held
+        a_out.push_back({ 16, a_code, kFrameDt, true, false });      // up edge
     }
 
 }  // namespace
@@ -175,42 +176,36 @@ bool KeyPress::ParseLayer(const std::string& a_layerId, std::vector<std::uint32_
 void KeyPress::Fire(const std::vector<std::uint32_t>& a_mods, std::uint32_t a_code, Tap a_tap) {
     if (!a_code) return;
 
-    // Frame budget.
-    constexpr int kCloseFrames = 1;    // GateThen() already waited for input to be live
-    constexpr int kModSettle   = 2;    // modifiers must be down BEFORE the key edge
-    constexpr int kHoldSingle  = 2;    // a press with no dwell can be missed
-    constexpr int kHoldLong    = 50;   // ~0.8 s - past every "long press" threshold
-    constexpr int kDoubleGap   = 4;    // short enough to read as a double tap
+    constexpr int kModSettleMs = 48;    // modifiers must be DOWN before the key edge
+    constexpr int kHoldShortMs = 48;
+    constexpr int kHoldLongMs  = 800;   // past every "long press" threshold
+    constexpr int kDoubleGapMs = 80;
 
     auto script = std::make_shared<std::vector<Edge>>();
 
-    // Modifiers down first, all on the same frame after the close delay.
-    bool first = true;
     for (const auto m : a_mods) {
-        script->push_back({ first ? kCloseFrames : 0, m, 0.0f, false, true });
-        first = false;
+        script->push_back({ 0, m, 0.0f, false, true });   // all down together
     }
 
-    const int lead = a_mods.empty() ? kCloseFrames : kModSettle;
+    const int lead = a_mods.empty() ? 0 : kModSettleMs;
     switch (a_tap) {
     case Tap::kDouble:
-        AppendPress(*script, a_code, lead, kHoldSingle);
-        AppendPress(*script, a_code, kDoubleGap, kHoldSingle);
+        AppendPress(*script, a_code, lead, kHoldShortMs);
+        AppendPress(*script, a_code, kDoubleGapMs, kHoldShortMs);
         break;
     case Tap::kLong:
-        AppendPress(*script, a_code, lead, kHoldLong);
+        AppendPress(*script, a_code, lead, kHoldLongMs);
         break;
     case Tap::kSingle:
     default:
-        AppendPress(*script, a_code, lead, kHoldSingle);
+        AppendPress(*script, a_code, lead, kHoldShortMs);
         break;
     }
 
-    // Modifiers up, in reverse, a couple of frames after the key released.
-    first = true;
+    bool firstUp = true;
     for (auto it = a_mods.rbegin(); it != a_mods.rend(); ++it) {
-        script->push_back({ first ? kModSettle : 0, *it, kFrameDt, true, false });
-        first = false;
+        script->push_back({ firstUp ? kModSettleMs : 0, *it, kFrameDt, true, false });
+        firstUp = false;
     }
 
     SKSE::log::info("KeyPress: queued code {} tap={} mods={} ({} edges) - waiting for input to be live",
@@ -218,5 +213,5 @@ void KeyPress::Fire(const std::vector<std::uint32_t>& a_mods, std::uint32_t a_co
                     a_tap == Tap::kDouble ? "double" : (a_tap == Tap::kLong ? "long" : "single"),
                     a_mods.size(), script->size());
 
-    GateThen(script, 0);
+    std::thread(Worker, script).detach();
 }
