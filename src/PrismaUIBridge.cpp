@@ -530,6 +530,10 @@ void PrismaUIBridge::RegisterJSListeners() {
     m_api->RegisterJSListener(m_view, "hkpPickKey", [](const char* data) {
         const int code = data ? std::atoi(data) : 0;
         if (code <= 0) return;
+        if (static_cast<std::uint32_t>(code) == InputHandler::GetSingleton()->GetToggleKey()) {
+            SKSE::log::warn("UI: hkpPickKey {} is the panel's own key - not sent", code);
+            return;
+        }
         SKSE::log::info("UI: hkpPickKey {}", code);
         if (auto* task = SKSE::GetTaskInterface()) {
             task->AddTask([code]() {
@@ -615,10 +619,21 @@ void PrismaUIBridge::ShowUI() {
     SKSE::log::info("PrismaUIBridge: UI shown (blocker pauses, Prisma FocusMenu active)");
 }
 
+static long long SteadyMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+bool PrismaUIBridge::PickJustOpened() const {
+    return m_pickActive.load() && SteadyMs() - m_pickOpenedMs.load() < 1000;
+}
+
 void PrismaUIBridge::ShowPick(const std::string& a_infoJson) {
     if (!m_ready || !m_api || !m_domReady || IsVisible()) return;
     m_pickModal.store(false);
     m_pickActive.store(true);
+    m_pickOpenedMs.store(SteadyMs());
+    PickMode::HoldMenuRemap(true);   // or the menu cursor stays frozen under the panel
     ShowUI();
     InvokeJS("HKP.startPick(" + a_infoJson + ")");
 }
@@ -629,6 +644,7 @@ void PrismaUIBridge::ShowManualPick() {
     m_pickModal.store(false);
     m_pickActive.store(true);
     m_pickManual.store(true);
+    m_pickOpenedMs.store(SteadyMs());
     ShowUI();
     InvokeJS("HKP.startPick({\"manual\":true,\"current\":-1})");
     SKSE::log::info("PrismaUIBridge: key picker opened over an SKSE Menu Framework window");
@@ -645,6 +661,7 @@ void PrismaUIBridge::HideUI() {
     m_pickModal.store(false);
     if (m_pickActive.exchange(false)) SKSE::log::info("PrismaUIBridge: key picker closed");
     if (m_pickManual.exchange(false)) PickMode::SmfSetOverlay(false);
+    PickMode::HoldMenuRemap(false);   // SkyUI's remap mode back before any key is sent
     InvokeJS("HKP.hide()");
     m_api->Unfocus(m_view);
     m_api->Hide(m_view);

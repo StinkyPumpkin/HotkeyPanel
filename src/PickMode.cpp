@@ -18,6 +18,7 @@ namespace {
     std::atomic<std::uint64_t> g_gen{ 0 };       // bumps when the Journal Menu closes
     std::atomic<bool>          g_injecting{ false };
     bool                       g_armed = true;   // main thread: one pick per remap session
+    bool                       g_heldRemap = false;   // we switched MenuControls::remapMode off
 
     RE::GFxMovieView* JournalMovie() {
         auto* ui = RE::UI::GetSingleton();
@@ -75,20 +76,16 @@ namespace {
         return out + "\"";
     }
 
-    // Main thread, ~15x a second while the Journal Menu is open.
-    void Check(std::uint64_t a_gen) {
-        if (a_gen != g_gen.load()) return;
+    // SkyUI's own flag for "a keymap option is waiting". It outlives SKSE's remapMode (which the
+    // MCM picker switches off while it is up), so it is what arms the picker once per bind.
+    bool SkyUIWaiting(RE::GFxMovieView* a_mv) {
+        bool remap = false;
+        return a_mv && GetBool(a_mv, std::string(kPanel) + "._bRemapMode", remap) && remap;
+    }
+
+    void ShowForMcm(RE::GFxMovieView* mv) {
         auto* bridge = PrismaUIBridge::GetSingleton();
-        if (!bridge || !bridge->PickEnabled() || !bridge->IsDomReady()) return;
-
-        auto* mc = RE::MenuControls::GetSingleton();
-        if (!mc || !mc->remapMode) { g_armed = true; return; }
-        if (!g_armed || g_injecting.load() || bridge->IsVisible()) return;
-
-        auto* mv = JournalMovie();
-        if (!SkyUIRemapActive(mv)) return;
         g_armed = false;
-
         const std::string panel = kPanel;
         const int idx = static_cast<int>(GetNumber(mv, panel + "._currentRemapOption", -1.0));
         const std::string entry = panel + "._optionsList.entryList." + std::to_string(idx);
@@ -102,6 +99,19 @@ namespace {
         const std::string json = "{\"mod\":" + JsonStr(mod) + ",\"option\":" + JsonStr(option) +
                                  ",\"current\":" + std::to_string(current) + "}";
         bridge->ShowPick(json);
+    }
+
+    // Main thread, ~15x a second while the Journal Menu is open.
+    void Check(std::uint64_t a_gen) {
+        if (a_gen != g_gen.load()) return;
+        auto* bridge = PrismaUIBridge::GetSingleton();
+        if (!bridge || !bridge->PickEnabled() || !bridge->IsDomReady()) return;
+
+        auto* mv = JournalMovie();
+        if (!SkyUIWaiting(mv)) { g_armed = true; return; }
+        if (!g_armed || g_injecting.load() || bridge->IsVisible()) return;
+        if (!SkyUIRemapActive(mv)) return;
+        ShowForMcm(mv);
     }
 
     void Watch(std::uint64_t a_gen) {
@@ -217,5 +227,34 @@ void PickMode::SmfInject(std::uint32_t a_code) {
     if (auto f = Smf().injectKey) {
         SKSE::log::info("PickMode: sending key {} to the SKSE Menu Framework page", a_code);
         f(a_code);
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// --Claude 2026-09-28 (field test fixes)
+bool PickMode::McmWaitingForKey() { return SkyUIRemapActive(JournalMovie()); }
+
+bool PickMode::OpenForWaitingMcm() {
+    auto* bridge = PrismaUIBridge::GetSingleton();
+    auto* mv = JournalMovie();
+    if (!bridge || !bridge->IsDomReady() || bridge->IsVisible() || !SkyUIRemapActive(mv)) return false;
+    SKSE::log::info("PickMode: toggle key pressed while an MCM waits for a key - opening the picker instead");
+    ShowForMcm(mv);
+    return true;
+}
+
+void PickMode::HoldMenuRemap(bool a_hold) {
+    auto* mc = RE::MenuControls::GetSingleton();
+    if (!mc) return;
+    if (a_hold) {
+        if (mc->remapMode) {
+            mc->remapMode = false;
+            g_heldRemap = true;
+            SKSE::log::info("PickMode: menu input back on while the picker is up (cursor)");
+        }
+    } else if (g_heldRemap) {
+        g_heldRemap = false;
+        // only if SkyUI still waits - SKSE's handler clears it itself once it has its key
+        if (SkyUIWaiting(JournalMovie())) mc->remapMode = true;
     }
 }

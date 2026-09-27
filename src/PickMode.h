@@ -26,6 +26,15 @@ namespace PickMode {
 
     bool IsInjecting();                    // our own synthetic event is being dispatched
 
+    // --Claude 2026-09-28 (field test): an MCM is waiting for a key right now.
+    bool McmWaitingForKey();
+    // Open the picker for that MCM (the toggle key pressed while it waits). False if none waits.
+    bool OpenForWaitingMcm();
+    // While the MCM picker is up: SKSE's remap mode switches the game's menu input off, which
+    // also stops the menu cursor the panel is clicked with. Hold it off while the panel is up,
+    // put it back when the panel closes (before the picked key is sent).
+    void HoldMenuRemap(bool a_hold);
+
     // --Claude 2026-09-28 SKSE Menu Framework pages. SMF gives each mod its own private "press a key"
     // capture, so nothing tells us a page is waiting: the user presses the panel's toggle key while an
     // SMF window is open and the panel opens as a manual picker. Needs our SMF fork's exports
