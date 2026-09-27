@@ -975,7 +975,9 @@
         const el = document.getElementById('hkp-swatch-label');
         if (!el) return;
         if (pick && !statusMsg) {
-            el.textContent = 'Binding "' + pickTitle() + '": click a key (any layer) or press it. ESC: back to the MCM.';
+            el.textContent = pick.manual
+                ? 'SKSE menu key: click a key or mouse button (any layer) for the page waiting for a key, or press it. ESC: cancel.'
+                : 'Binding "' + pickTitle() + '": click a key (any layer) or press it. ESC: back to the MCM.';
             el.classList.remove('hkp-swatch-label-tap');
             return;
         }
@@ -1576,6 +1578,7 @@
     // ---------------------------------------------------------------
     function pickTitle() {
         if (!pick) return '';
+        if (pick.manual) return 'the SKSE menu page waiting for a key';
         return pick.mod && pick.option ? pick.mod + ': ' + pick.option : (pick.option || pick.mod || 'MCM key');
     }
     function startPick(info) {
@@ -1585,7 +1588,7 @@
         if (colorMode) exitColorMode();
         if (settingsOpen) toggleSettings();
         cancelHold(); hideContextMenu(); hideTooltip();
-        pick = { mod: String(i.mod || ''), option: String(i.option || ''), current: Number(i.current) || 0 };
+        pick = { manual: !!i.manual, mod: String(i.mod || ''), option: String(i.option || ''), current: Number(i.current) || 0 };
         document.body.classList.add('hkp-pick-mode');
         const cur = DIK_TO_CODE[pick.current];
         document.querySelectorAll('.hkp-pick-current').forEach(el => el.classList.remove('hkp-pick-current'));
@@ -1609,7 +1612,8 @@
         pickModal = { keyId, dik, layer, color: (own && own.color) || 6 };
         document.getElementById('hkp-pick-title').textContent = 'Bind ' + caption +
             (layer !== 'default' ? '  (layer: ' + layerCaption(layer) + ')' : '');
-        document.getElementById('hkp-pick-body').textContent = pickTitle();
+        document.getElementById('hkp-pick-body').textContent = pick.manual
+            ? 'Sent to the SKSE menu page waiting for a key.' : pickTitle();
         const others = conflictOwners(keyId);
         const warn = document.getElementById('hkp-pick-warn');
         warn.textContent = others.length ? 'Already on this key:\n' + others.map(o => '• ' + o).join('\n') : '';
@@ -1648,8 +1652,10 @@
         if (!pickModal || !pick) return;
         const { keyId, dik, layer, color } = pickModal;
         const label = document.getElementById('hkp-pick-input').value.trim();
-        pendingPick = { dik, label, color, t: Date.now() };
-        if (layer !== 'default') {
+        // MCM: the name/colour ride on MCM Unlocked's announce. SKSE menu pages announce nothing,
+        // so there the name/colour go straight onto the key, on the layer on screen.
+        if (!pick.manual) pendingPick = { dik, label, color, t: Date.now() };
+        if (layer !== 'default' || pick.manual) {
             ensureKeyLayer(keyId, layer);
             const e = state.keys[keyId].layers[layer];
             if (label) e.label = label;

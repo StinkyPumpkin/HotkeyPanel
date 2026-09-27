@@ -25,4 +25,14 @@ namespace PickMode {
     void InjectAfter(std::uint32_t a_code, int a_delayMs);
 
     bool IsInjecting();                    // our own synthetic event is being dispatched
+
+    // --Claude 2026-09-28 SKSE Menu Framework pages. SMF gives each mod its own private "press a key"
+    // capture, so nothing tells us a page is waiting: the user presses the panel's toggle key while an
+    // SMF window is open and the panel opens as a manual picker. Needs our SMF fork's exports
+    // (SetExternalOverlay / SetReservedKey / InjectKey); without them the toggle behaves as before.
+    bool SmfWindowOpen();                  // an SMF window that pauses the game is open
+    bool SmfPickAvailable();               // our SMF fork is loaded
+    void SmfSetOverlay(bool a_on);         // SMF passes all input to the game/panel, mods see none
+    void SmfReserveKey(std::uint32_t a_dik);   // the panel's toggle key never reaches SMF mods
+    void SmfInject(std::uint32_t a_code);  // hand the picked key to the mods like a pressed key
 }

@@ -44,6 +44,8 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
     if (!bridge) return RE::BSEventNotifyControl::kContinue;
     if (bridge->IsVisible()) {
         if (!bridge->IsTextInputActive()) bridge->HideUI();
+    } else if (PickMode::SmfWindowOpen() && PickMode::SmfPickAvailable()) {
+        bridge->ShowManualPick();   // --Claude: over an SKSE Menu Framework window = key picker
     } else if (!IsBlockingMenuOpen()) {
         bridge->ShowUI();
     }
@@ -53,6 +55,8 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
 void InputHandler::SetToggleKey(std::uint32_t dxScanCode, bool enabled) {
     if (dxScanCode != 0) m_toggleKey.store(dxScanCode);
     m_toggleEnabled.store(enabled);
+    // --Claude: keep the toggle key away from SKSE Menu Framework mods waiting for a key
+    PickMode::SmfReserveKey(enabled ? m_toggleKey.load() : 0);
     SKSE::log::info("InputHandler: toggle key set to {} (enabled={})",
                     m_toggleKey.load(), enabled);
 }
@@ -119,6 +123,12 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
             // pick binds that key, exactly as without the panel - close it and let the press run
             // on to SKSE's remap handler (the sink after ours) instead of swallowing it.
             if (bridge->IsPickActive()) {
+                if (bridge->IsPickManual()) {
+                    // SMF mods only see input through SMF, which is paused for us: hand it over
+                    SKSE::log::info("InputHandler: key {} pressed in the SKSE menu key picker - sent to the page", code);
+                    bridge->FinishManualPick(code);
+                    return RE::BSEventNotifyControl::kStop;
+                }
                 SKSE::log::info("InputHandler: key {} pressed in the MCM key picker - the MCM takes it", code);
                 bridge->HideUI();
                 return RE::BSEventNotifyControl::kContinue;
@@ -140,8 +150,13 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
         if (!button || !button->IsDown()) continue;
         if (button->device.get() != RE::INPUT_DEVICE::kKeyboard) continue;
         if (button->GetIDCode() == wantKey && !IsGKey(wantKey)) {  // G-keys handled by the service sink
-            SKSE::log::info("InputHandler: toggle key {} pressed -> ShowUI", wantKey);
-            bridge->ShowUI();
+            if (PickMode::SmfWindowOpen() && PickMode::SmfPickAvailable()) {
+                SKSE::log::info("InputHandler: toggle key {} pressed over an SKSE menu -> key picker", wantKey);
+                bridge->ShowManualPick();
+            } else {
+                SKSE::log::info("InputHandler: toggle key {} pressed -> ShowUI", wantKey);
+                bridge->ShowUI();
+            }
             return RE::BSEventNotifyControl::kStop;
         }
     }
