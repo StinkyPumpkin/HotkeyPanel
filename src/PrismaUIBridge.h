@@ -42,6 +42,8 @@ public:
     // Bind (or a real key) hands the key to the SMF mods through PickMode::SmfInject.
     void ShowManualPick();
     bool IsPickManual() const { return m_pickManual.load(); }
+    // A picker opened in the last second: its own key (a second or bounced F24) is ignored.
+    bool PickJustOpened() const;
     void FinishManualPick(std::uint32_t a_code);
 
     // --Claude console guard (PEM-proven pattern): closes the Console the instant it
@@ -77,5 +79,6 @@ private:
     std::atomic<bool> m_pickModal{false};
     std::atomic<bool> m_pickEnabled{true};   // settings.pickMode, pushed by the panel
     std::atomic<bool> m_pickManual{false};   // picker is over an SKSE Menu Framework window
+    std::atomic<long long> m_pickOpenedMs{0}; // steady-clock ms when a picker opened
     bool m_pauseOnShow = true;
 };

@@ -43,7 +43,10 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
     auto* bridge = PrismaUIBridge::GetSingleton();
     if (!bridge) return RE::BSEventNotifyControl::kContinue;
     if (bridge->IsVisible()) {
-        if (!bridge->IsTextInputActive()) bridge->HideUI();
+        // --Claude: a picker that just opened ignores its own key (a second / bounced press)
+        if (!bridge->IsTextInputActive() && !bridge->PickJustOpened()) bridge->HideUI();
+    } else if (PickMode::OpenForWaitingMcm()) {
+        // --Claude: F24 in an MCM that waits for a key opens the picker, never binds F24
     } else if (PickMode::SmfWindowOpen() && PickMode::SmfPickAvailable()) {
         bridge->ShowManualPick();   // --Claude: over an SKSE Menu Framework window = key picker
     } else if (!IsBlockingMenuOpen()) {
@@ -113,10 +116,16 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
             if (button->device.get() != RE::INPUT_DEVICE::kKeyboard) continue;
 
             const auto code = button->GetIDCode();
-            // G-key toggle close is handled by the G-Key Service sink; ESC/Tab always close.
-            if (code == kEscape || code == kTab ||
-                (code == toggleCode && !IsGKey(toggleCode))) {
+            // ESC/Tab always close.
+            if (code == kEscape || code == kTab) {
                 bridge->HideUI();
+                break;
+            }
+            // --Claude 2026-09-28: the panel's own key is never picked (a second F24 press 0.5 s after
+            // opening got sent to an SMF page as its new key). It closes the panel - except in the
+            // first second of a picker; G-key toggles close through the G-Key Service sink.
+            if (code == toggleCode) {
+                if (!IsGKey(toggleCode) && !bridge->PickJustOpened()) bridge->HideUI();
                 break;
             }
             // --Claude 2026-09-28 MCM key picker: a REAL key pressed while the panel waits for a
@@ -142,6 +151,19 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
     // ----------------------------------------------------------------
     if (PickMode::IsInjecting()) return RE::BSEventNotifyControl::kContinue;  // our key for the MCM, not a toggle
     if (!m_toggleEnabled.load()) return RE::BSEventNotifyControl::kContinue;
+
+    // --Claude 2026-09-28: the toggle key while an MCM waits for a key must not reach SKSE's remap
+    // handler (the sink after ours) - that would bind it. Swallow it and open the picker instead
+    // (a G-key opens it through the G-Key Service event).
+    if (PickMode::McmWaitingForKey()) {
+        const auto toggle = m_toggleKey.load();
+        for (auto* evt = *a_event; evt; evt = evt->next) {
+            auto* button = evt->AsButtonEvent();
+            if (!button || button->device.get() != RE::INPUT_DEVICE::kKeyboard || button->GetIDCode() != toggle) continue;
+            if (button->IsDown() && !IsGKey(toggle)) PickMode::OpenForWaitingMcm();
+            return RE::BSEventNotifyControl::kStop;
+        }
+    }
     if (IsBlockingMenuOpen()) return RE::BSEventNotifyControl::kContinue;
 
     const auto wantKey = m_toggleKey.load();

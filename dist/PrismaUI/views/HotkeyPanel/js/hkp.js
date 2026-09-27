@@ -1603,6 +1603,10 @@
         updateSwatchBarLabel();
     }
     function openPickModal(keyId) {
+        if (isReservedKey(keyId)) {
+            flashStatus((KEY_CAPTION[keyId] || keyId) + ' opens the Hotkey Panel. Pick another key.');
+            return;
+        }
         const dik = CODE_TO_DIK[keyId];
         if (!dik) { flashStatus('That key cannot be bound from the panel. Press it on the keyboard instead.'); return; }
         cancelHold(); hideTooltip();

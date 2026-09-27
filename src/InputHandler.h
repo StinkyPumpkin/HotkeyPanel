@@ -25,6 +25,7 @@ public:
     // whenever the JS dispatches hkpSetToggleKey, and once on UI load so the
     // DLL learns the user's persisted key.
     void SetToggleKey(std::uint32_t dxScanCode, bool enabled);
+    std::uint32_t GetToggleKey() const { return m_toggleEnabled.load() ? m_toggleKey.load() : 0; }
 
     // Map a UI keyname string ("F11", "KeyQ", "Numpad5", ...) to a Skyrim
     // DXScanCode. Returns 0 for unknown.
