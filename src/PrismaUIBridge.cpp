@@ -3,6 +3,7 @@
 #include "InputHandler.h"
 #include "BlockerMenu.h"
 #include "KeyPress.h"
+#include "PickMode.h"
 #include <vector>
 #include <format>
 #include <set>
@@ -69,13 +70,43 @@ namespace {
         }
     }
 
-    void ConsolePulse(std::uint64_t gen) {
+    // --Claude 2026-09-28 (user: "Hotkey Panel opens the console every time"): the panel can be
+    // opened over a menu that keeps its own cursor - the MCM / Journal, and now the MCM key picker
+    // opens it there on purpose. Closing it then leaves the Cursor Menu open because THAT menu owns
+    // it, which the check below read as "cursor stuck" and answered with a console pulse, every
+    // time. A menu that still owns the cursor rebuilds the cursor state itself when it closes (a
+    // menu cycle is exactly what the pulse imitates), so never pulse while one is open.
+    // Main thread (every caller runs inside an AddTask).
+    bool OtherCursorMenuOpen(std::string& a_which) {
+        auto* ui = RE::UI::GetSingleton();
+        if (!ui) return false;
+        const auto cursor  = ui->GetMenu("Cursor Menu");
+        const auto focus   = ui->GetMenu(kFocusMenu);
+        const auto blocker = ui->GetMenu("HKP_Blocker");
+        for (const auto& menu : ui->menuStack) {
+            if (!menu || menu == cursor || menu == focus || menu == blocker) continue;
+            if (!menu->menuFlags.any(RE::IMenu::Flag::kUsesCursor)) continue;
+            for (const auto& item : ui->menuMap) {
+                if (item.second.menu == menu) { a_which = item.first.c_str() ? item.first.c_str() : "?"; break; }
+            }
+            if (a_which.empty()) a_which = "a menu";
+            return true;
+        }
+        return false;
+    }
+
+    void ConsolePulse(std::uint64_t gen, const char* why) {
         PRISMA_UI_API::IVPrismaUI2* api; PrismaView view;
         if (!Current(gen, api, view)) return;
         if (MenuOpen("Console")) return;               // user's own console — leave it
+        std::string owner;
+        if (OtherCursorMenuOpen(owner)) {
+            SKSE::log::info("HKPFocusRecovery: no console pulse ({}) - '{}' is open and owns the cursor", why, owner);
+            return;
+        }
         bool expected = false;
         if (!g_consoleOwned.compare_exchange_strong(expected, true)) return;
-        SKSE::log::warn("HKPFocusRecovery: console pulse (rebuild mouse/menu input state)");
+        SKSE::log::warn("HKPFocusRecovery: console pulse ({}) - rebuild mouse/menu input state", why);
         QueueMenu("Console", RE::UI_MESSAGE_TYPE::kShow);
         // real time between show and hide is REQUIRED (prism: same-frame never works)
         Scheduler::Get().After(180ms, [gen]() { CloseOwnedConsole(); });
@@ -95,7 +126,7 @@ namespace {
                                  MenuOpen("Cursor Menu");  // RE::CursorMenu::MENU_NAME (string_view in this CommonLib)
 
         if (!ownFocus && anyFocus) {
-            ConsolePulse(gen);  // another Prisma mod holds focus — pulse makes it yield
+            ConsolePulse(gen, "another PrismaUI view holds focus");  // the pulse makes it yield
             return;
         }
         if (ownFocus && attempt < 3) {
@@ -110,8 +141,12 @@ namespace {
             Scheduler::Get().After(80ms, [gen, attempt]() { VerifyCleanup(gen, attempt + 1, true); });
             return;
         }
-        if (cursorStuck) SKSE::log::warn("HKPFocusRecovery: Cursor Menu stuck after close");
-        if (needsPulse || ownFocus || focusMenu || cursorStuck) ConsolePulse(gen);
+        if (needsPulse || ownFocus || focusMenu || cursorStuck) {
+            ConsolePulse(gen, cursorStuck ? "Cursor Menu still open after close"
+                            : ownFocus    ? "panel still focused"
+                            : focusMenu   ? "PrismaUI FocusMenu still open"
+                                          : "focus was stale at close");
+        }
     }
 
     void CheckUnfocus(std::uint64_t gen, int attempt) {
@@ -488,6 +523,33 @@ void PrismaUIBridge::RegisterJSListeners() {
         }
     });
 
+    // --Claude 2026-09-28 MCM key picker. JS -> DLL "dik": the key the user clicked (and named) in
+    // pick mode. Close the panel first - the input sink swallows everything while it is up - then
+    // hand the key to SKSE's remap handler, which gives it to the MCM.
+    m_api->RegisterJSListener(m_view, "hkpPickKey", [](const char* data) {
+        const int code = data ? std::atoi(data) : 0;
+        if (code <= 0) return;
+        SKSE::log::info("UI: hkpPickKey {}", code);
+        if (auto* task = SKSE::GetTaskInterface()) {
+            task->AddTask([code]() {
+                if (g_bridge && g_bridge->IsVisible()) g_bridge->HideUI();
+                PickMode::InjectAfter(static_cast<std::uint32_t>(code), 150);
+            });
+        }
+    });
+
+    // "1" while the pick dialog (name + colour) is up: ESC/Enter belong to the dialog then.
+    m_api->RegisterJSListener(m_view, "hkpPickModal", [](const char* data) {
+        if (g_bridge) g_bridge->m_pickModal.store(data && data[0] == '1');
+    });
+
+    // Settings: open the panel when an MCM asks for a key ("1"/"0").
+    m_api->RegisterJSListener(m_view, "hkpSetPickMode", [](const char* data) {
+        const bool on = data && data[0] == '1';
+        if (g_bridge && g_bridge->m_pickEnabled.exchange(on) != on)
+            SKSE::log::info("UI: MCM key picker {}", on ? "ON" : "OFF");
+    });
+
     SKSE::log::info("PrismaUIBridge: JS listeners registered");
 }
 
@@ -548,9 +610,19 @@ void PrismaUIBridge::ShowUI() {
     SKSE::log::info("PrismaUIBridge: UI shown (blocker pauses, Prisma FocusMenu active)");
 }
 
+void PrismaUIBridge::ShowPick(const std::string& a_infoJson) {
+    if (!m_ready || !m_api || !m_domReady || IsVisible()) return;
+    m_pickModal.store(false);
+    m_pickActive.store(true);
+    ShowUI();
+    InvokeJS("HKP.startPick(" + a_infoJson + ")");
+}
+
 void PrismaUIBridge::HideUI() {
     if (!m_ready || !m_api || !IsVisible()) return;
     m_textInput.store(false);  // never leave the text-input gate armed after close
+    m_pickModal.store(false);
+    if (m_pickActive.exchange(false)) SKSE::log::info("PrismaUIBridge: MCM key picker closed");
     InvokeJS("HKP.hide()");
     m_api->Unfocus(m_view);
     m_api->Hide(m_view);

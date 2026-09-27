@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Hotkey Panel</title>
-    <link rel="stylesheet" href="css/hkp.css?v=18">
+    <link rel="stylesheet" href="css/hkp.css?v=19">
 </head>
 <body>
 <div id="hkp-root" class="hkp-hidden">
@@ -93,6 +93,24 @@
         </div>
     </div>
 
+    <!-- --Claude MCM key picker: name + colour the key before it is bound -->
+    <div class="hkp-modal hkp-hidden" id="hkp-modal-pick">
+        <div class="hkp-modal-box hkp-pick-box">
+            <div class="hkp-modal-title" id="hkp-pick-title">Bind key</div>
+            <div class="hkp-modal-body" id="hkp-pick-body"></div>
+            <div class="hkp-pick-warn hkp-hidden" id="hkp-pick-warn"></div>
+            <div class="hkp-pick-label">Name on the panel</div>
+            <input type="text" id="hkp-pick-input" class="hkp-modal-input" maxlength="60"
+                   onkeydown="HKP.onPickKeydown(event)">
+            <div class="hkp-pick-label">Colour</div>
+            <div class="hkp-swatches hkp-pick-swatches" id="hkp-pick-swatches"></div>
+            <div class="hkp-modal-buttons">
+                <button class="hkp-btn" onclick="HKP.cancelPick()">Back</button>
+                <button class="hkp-btn hkp-btn-primary" onclick="HKP.confirmPick()">Bind</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Confirm dialog -->
     <div class="hkp-modal hkp-hidden" id="hkp-modal-confirm">
         <div class="hkp-modal-box">
@@ -121,6 +139,18 @@
                     <button class="hkp-btn" id="hkp-toggle-key-btn" onclick="HKP.startBindToggleKey()">F11</button>
                     <label class="hkp-check">
                         <input type="checkbox" id="hkp-toggle-key-enabled" onchange="HKP.setToggleEnabled(this.checked)">
+                        <span>Enabled</span>
+                    </label>
+                </div>
+            </div>
+            <div class="hkp-setting-row">
+                <div class="hkp-setting-label">
+                    MCM key picker
+                    <div class="hkp-setting-hint">When an MCM asks you to press a key, this panel opens over it. Click a key (on any layer) to bind it, then name and colour it. Pressing a real key still binds it straight away; ESC goes back to the MCM's own prompt.</div>
+                </div>
+                <div class="hkp-setting-control">
+                    <label class="hkp-check">
+                        <input type="checkbox" id="hkp-pick-enabled" onchange="HKP.setPickMode(this.checked)">
                         <span>Enabled</span>
                     </label>
                 </div>
@@ -175,6 +205,6 @@
 </div>
 
 <script src="js/gkeys.js?v=1"></script>
-<script src="js/hkp.js?v=19"></script>
+<script src="js/hkp.js?v=20"></script>
 </body>
 </html>

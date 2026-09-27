@@ -1,6 +1,7 @@
 #include "PrismaUIBridge.h"
 #include "InputHandler.h"
 #include "BlockerMenu.h"
+#include "PickMode.h"
 
 #include <spdlog/sinks/basic_file_sink.h>
 
@@ -33,6 +34,7 @@ namespace {
             InputHandler::GetSingleton()->Register();
             BlockerMenu::Register();
             PrismaUIBridge::RegisterConsoleGuard();
+            PickMode::Register();
             break;
         }
     }

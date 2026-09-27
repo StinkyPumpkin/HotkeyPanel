@@ -720,3 +720,16 @@ body.hkp-move-mode .hkp-key.hkp-move-target:hover { background: #3a3a2a !importa
 }
 .hkp-ctx-note { padding: 4px 16px 6px; font-size: 12px; font-style: italic; color: #9a948a; }
 .hkp-ctx-note.hkp-ctx-warn { color: #FF6F61; font-style: normal; }
+
+/* =========================================================================
+   --Claude 2026-09-28: MCM key picker
+   ========================================================================= */
+body.hkp-pick-mode .hkp-swatch-bar { border-color: var(--hkp-gold); }
+body.hkp-pick-mode .hkp-key:hover,
+body.hkp-pick-mode .hkp-m-input:hover { cursor: pointer; box-shadow: inset 0 0 0 2px var(--hkp-gold-hi); }
+.hkp-key.hkp-pick-current,
+.hkp-m-input.hkp-pick-current { outline: 2px dashed var(--hkp-gold-hi); outline-offset: -4px; }
+.hkp-pick-box { min-width: 420px; max-width: 560px; }
+.hkp-pick-label { font-size: 13px; color: var(--hkp-text-dim); margin: 12px 0 6px; }
+.hkp-pick-warn { color: #FF6F61; font-size: 13px; margin: -6px 0 4px; white-space: pre-line; }
+.hkp-pick-swatches { flex-wrap: wrap; margin-bottom: 16px; }

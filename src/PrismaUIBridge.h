@@ -30,6 +30,15 @@ public:
     void SetTextInputActive(bool on) { m_textInput.store(on); }
     bool IsTextInputActive() const { return m_textInput.load(); }
 
+    // --Claude 2026-09-28 MCM key picker (PickMode). ShowPick opens the panel over the MCM with
+    // the option being bound; the panel stays in pick mode until it closes. While the name/colour
+    // dialog is up (pick modal) every key belongs to the panel, like a focused text box.
+    bool IsDomReady() const { return m_domReady.load(); }
+    void ShowPick(const std::string& a_infoJson);
+    bool IsPickActive() const { return m_pickActive.load(); }
+    bool IsPickModalOpen() const { return m_pickModal.load(); }
+    bool PickEnabled() const { return m_pickEnabled.load(); }
+
     // --Claude console guard (PEM-proven pattern): closes the Console the instant it
     // opens over the visible panel — kStop can't stop it (menu input runs first).
     static void RegisterConsoleGuard();
@@ -59,5 +68,8 @@ private:
     std::atomic<bool> m_domReady{false};
     std::atomic<bool> m_initialStateSent{false};
     std::atomic<bool> m_textInput{false};
+    std::atomic<bool> m_pickActive{false};
+    std::atomic<bool> m_pickModal{false};
+    std::atomic<bool> m_pickEnabled{true};   // settings.pickMode, pushed by the panel
     bool m_pauseOnShow = true;
 };
