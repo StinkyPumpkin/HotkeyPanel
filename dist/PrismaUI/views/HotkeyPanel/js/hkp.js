@@ -157,7 +157,8 @@
             labelFontSize: 18,
             panelScale: 100,    // percent, 12..100
             panelOpacity: 100,  // percent, 20..100
-            fontFamily: ''      // --Claude: '' = default EB Garamond stack
+            fontFamily: '',     // --Claude: '' = default EB Garamond stack
+            pickMode: true      // --Claude: open over an MCM that asks for a key (MCM key picker)
         },
         profiles: [{ name: 'DEFAULT', system: true }],
         activeProfile: 'DEFAULT',
@@ -192,6 +193,12 @@
     let pendingMove = null;   // { source, code, label, timer } until the owner answers
     let statusMsg = null;     // short message in the swatch bar
     let statusTimer = null;
+    // --Claude 2026-09-28 MCM key picker: pick = { mod, option, current } while an MCM waits for a
+    // key; pickModal = { keyId, dik, layer, color } while the name/colour dialog is up; pendingPick =
+    // the name/colour to give the MCM's key once MCM Unlocked announces the new binding.
+    let pick = null;
+    let pickModal = null;
+    let pendingPick = null;
 
     // ---------------------------------------------------------------
     // Bootstrap
@@ -224,6 +231,7 @@
         const enabled = state.settings.toggleKeyEnabled ? '1' : '0';
         const key = state.settings.toggleKey || 'F11';
         dispatchToBridge('hkpSetToggleKey', enabled + '|' + key);
+        dispatchToBridge('hkpSetPickMode', state.settings.pickMode === false ? '0' : '1');
     }
 
     // Fit keyboard to available width/height of its container. Profiles sidebar now
@@ -592,6 +600,8 @@
 
     function onKeyClick(keyId, el) {
         if (moveMode) { if (isMoveTarget(keyId)) finishMove(keyId); return; }
+        // MCM key picker: any key on any layer picks it; modifier keys still switch layers.
+        if (pick && !state.modifierKeys.includes(keyId)) { openPickModal(keyId); return; }
         if (isReservedKey(keyId)) return;
         if (state.modifierKeys.includes(keyId)) { toggleActiveModifier(keyId); return; }
         if (colorMode !== null) { applyColor(keyId); return; }
@@ -612,6 +622,7 @@
     // A key is "a hotkey" only if it carries a label in the current layer. Modifier
     // keys and colour-paint mode keep their existing click behaviour and are excluded.
     function canTriggerKey(keyId) {
+        if (pick) return false;
         if (isReservedKey(keyId)) return false;
         if (state.modifierKeys.includes(keyId)) return false;
         if (colorMode !== null || moveMode) return false;
@@ -739,6 +750,7 @@
     }
 
     function onKeyContext(keyId, el, evt) {
+        if (pick) return;
         if (moveMode) { exitMoveMode(); return; }
         if (isReservedKey(keyId)) {
             // the toggle key has no menu of its own, but a mod bound on it still needs Move
@@ -940,7 +952,7 @@
         colorMode = { swatchIdx: idx };
         document.body.classList.add('hkp-color-mode');
         document.getElementById('hkp-swatch-bar').classList.add('hkp-active');
-        [...document.querySelectorAll('.hkp-swatch')].forEach((sw, i) =>
+        [...document.querySelectorAll('#hkp-swatches .hkp-swatch')].forEach((sw, i) =>
             sw.classList.toggle('selected', i === idx));
         updateSwatchBarLabel();
     }
@@ -955,13 +967,18 @@
         colorMode = null;
         document.body.classList.remove('hkp-color-mode');
         document.getElementById('hkp-swatch-bar').classList.remove('hkp-active');
-        [...document.querySelectorAll('.hkp-swatch')].forEach(sw => sw.classList.remove('selected'));
+        [...document.querySelectorAll('#hkp-swatches .hkp-swatch')].forEach(sw => sw.classList.remove('selected'));
         updateSwatchBarLabel();
     }
     // Shows color-mode tip while a swatch is picked, otherwise shows the current tap mode.
     function updateSwatchBarLabel() {
         const el = document.getElementById('hkp-swatch-label');
         if (!el) return;
+        if (pick && !statusMsg) {
+            el.textContent = 'Binding "' + pickTitle() + '": click a key (any layer) or press it. ESC: back to the MCM.';
+            el.classList.remove('hkp-swatch-label-tap');
+            return;
+        }
         if (moveMode || statusMsg) {
             el.textContent = moveMode
                 ? 'Moving "' + moveMode.label + '": click an empty key. ESC or right-click cancels.'
@@ -1055,6 +1072,7 @@
     function syncSettingsInputs() {
         document.getElementById('hkp-toggle-key-btn').textContent = state.settings.toggleKey || '(unset)';
         document.getElementById('hkp-toggle-key-enabled').checked = !!state.settings.toggleKeyEnabled;
+        document.getElementById('hkp-pick-enabled').checked = state.settings.pickMode !== false;
         const sz = Number(state.settings.labelFontSize) || 18;
         document.getElementById('hkp-label-size').value = sz;
         document.getElementById('hkp-label-size-val').textContent = sz;
@@ -1163,6 +1181,11 @@
         applyFont();
         save();
     }
+    function setPickMode(val) {
+        state.settings.pickMode = !!val;
+        dispatchToBridge('hkpSetPickMode', val ? '1' : '0');
+        save();
+    }
     function setToggleEnabled(val) {
         state.settings.toggleKeyEnabled = val;
         dispatchToBridge('hkpSetToggleKey', (val ? '1' : '0') + '|' + (state.settings.toggleKey || ''));
@@ -1265,6 +1288,7 @@
                 }
                 e.preventDefault();
                 // ESC/Tab cascade: close whatever is layered on top first.
+                if (pickModal) { closePickModal(); return; }
                 if (!document.getElementById('hkp-modal-confirm').classList.contains('hkp-hidden')) { confirmCancel(); return; }
                 if (!document.getElementById('hkp-modal-edit').classList.contains('hkp-hidden'))    { cancelEdit(); return; }
                 if (!document.getElementById('hkp-modal-profile').classList.contains('hkp-hidden')) { cancelProfile(); return; }
@@ -1357,6 +1381,15 @@
         if (dik > 0 && !code) { console.warn('HKP: no panel key for DIK', dik, source); return; }
         if (code) state.external[source] = { key: code, label, color, move };
         else delete state.external[source];
+
+        // MCM key picker: MCM Unlocked announces the key the MCM accepted - name/colour it as picked.
+        if (pendingPick && code && dik === pendingPick.dik && source.startsWith('MCM:') &&
+            Date.now() - pendingPick.t < 20000) {
+            const c = customFor(source, true);
+            if (pendingPick.label && pendingPick.label !== label) c.label = pendingPick.label; else delete c.label;
+            if (pendingPick.color) c.color = pendingPick.color; else delete c.color;
+            pendingPick = null;
+        }
 
         if (pendingMove && pendingMove.source === source) {
             clearTimeout(pendingMove.timer);
@@ -1534,10 +1567,111 @@
     }
 
     // ---------------------------------------------------------------
+    // --Claude 2026-09-28: MCM key picker
+    // The DLL opens the panel when an MCM asks for a key (HKP.startPick). A click on a key opens a
+    // small dialog to name and colour it; Bind sends the key to the DLL, which closes the panel and
+    // hands the key to the MCM exactly as if it had been pressed. The MCM's accepted key comes back
+    // through MCM Unlocked's announce (setExternalHotkey), which applies the name/colour. On a layer
+    // other than the default, the name/colour also go on that layer of the key.
+    // ---------------------------------------------------------------
+    function pickTitle() {
+        if (!pick) return '';
+        return pick.mod && pick.option ? pick.mod + ': ' + pick.option : (pick.option || pick.mod || 'MCM key');
+    }
+    function startPick(info) {
+        let i = info;
+        try { if (typeof info === 'string') i = JSON.parse(info); } catch (_) { i = {}; }
+        if (moveMode) exitMoveMode();
+        if (colorMode) exitColorMode();
+        if (settingsOpen) toggleSettings();
+        cancelHold(); hideContextMenu(); hideTooltip();
+        pick = { mod: String(i.mod || ''), option: String(i.option || ''), current: Number(i.current) || 0 };
+        document.body.classList.add('hkp-pick-mode');
+        const cur = DIK_TO_CODE[pick.current];
+        document.querySelectorAll('.hkp-pick-current').forEach(el => el.classList.remove('hkp-pick-current'));
+        if (cur) document.querySelectorAll('[data-key-id="' + cur + '"]').forEach(el => el.classList.add('hkp-pick-current'));
+        updateSwatchBarLabel();
+    }
+    function endPick() {
+        if (pickModal) closePickModal();
+        pick = null;
+        document.body.classList.remove('hkp-pick-mode');
+        document.querySelectorAll('.hkp-pick-current').forEach(el => el.classList.remove('hkp-pick-current'));
+        updateSwatchBarLabel();
+    }
+    function openPickModal(keyId) {
+        const dik = CODE_TO_DIK[keyId];
+        if (!dik) { flashStatus('That key cannot be bound from the panel. Press it on the keyboard instead.'); return; }
+        cancelHold(); hideTooltip();
+        const layer = currentLayerId();
+        const caption = KEY_CAPTION[keyId] || keyId;
+        const own = getKeyLayer(keyId, layer);
+        pickModal = { keyId, dik, layer, color: (own && own.color) || 6 };
+        document.getElementById('hkp-pick-title').textContent = 'Bind ' + caption +
+            (layer !== 'default' ? '  (layer: ' + layerCaption(layer) + ')' : '');
+        document.getElementById('hkp-pick-body').textContent = pickTitle();
+        const others = conflictOwners(keyId);
+        const warn = document.getElementById('hkp-pick-warn');
+        warn.textContent = others.length ? 'Already on this key:\n' + others.map(o => '• ' + o).join('\n') : '';
+        warn.classList.toggle('hkp-hidden', !others.length);
+        const input = document.getElementById('hkp-pick-input');
+        input.value = (own && own.label) || pick.option || '';
+        renderPickSwatches();
+        document.getElementById('hkp-modal-pick').classList.remove('hkp-hidden');
+        dispatchToBridge('hkpPickModal', '1');
+        setTimeout(() => { input.focus(); input.select(); }, 30);
+    }
+    function layerCaption(layer) {
+        const [tap, mods] = layer.includes(':') ? layer.split(':') : ['single', layer];
+        const m = mods === 'default' ? '' : mods.split('+').map(k => KEY_CAPTION[k] || k).join(' + ');
+        const t = tap !== 'single' ? TAP_LABEL[tap] : '';
+        return [m, t].filter(Boolean).join(', ') || 'default';
+    }
+    function renderPickSwatches() {
+        const bar = document.getElementById('hkp-pick-swatches');
+        bar.innerHTML = '';
+        for (const p of PALETTE) {
+            const sw = document.createElement('div');
+            sw.className = 'hkp-swatch' + (pickModal && pickModal.color === p.idx ? ' selected' : '');
+            sw.style.background = p.hex || 'repeating-linear-gradient(45deg, #333, #333 3px, #222 3px, #222 6px)';
+            sw.title = p.hex || 'No colour';
+            sw.onclick = () => { if (pickModal) { pickModal.color = p.idx; renderPickSwatches(); } };
+            bar.appendChild(sw);
+        }
+    }
+    function closePickModal() {
+        pickModal = null;
+        document.getElementById('hkp-modal-pick').classList.add('hkp-hidden');
+        dispatchToBridge('hkpPickModal', '0');
+    }
+    function confirmPick() {
+        if (!pickModal || !pick) return;
+        const { keyId, dik, layer, color } = pickModal;
+        const label = document.getElementById('hkp-pick-input').value.trim();
+        pendingPick = { dik, label, color, t: Date.now() };
+        if (layer !== 'default') {
+            ensureKeyLayer(keyId, layer);
+            const e = state.keys[keyId].layers[layer];
+            if (label) e.label = label;
+            e.color = color;
+            refreshAll(); save();
+        }
+        closePickModal();
+        dispatchToBridge('hkpPickKey', String(dik));   // the DLL closes the panel and binds it
+    }
+
+    // ---------------------------------------------------------------
     // Public API
     // ---------------------------------------------------------------
     window.HKP = {
         setExternalHotkey, setGameKeys,
+        startPick, endPick, setPickMode,
+        confirmPick: () => confirmPick(),
+        cancelPick: () => closePickModal(),
+        onPickKeydown: (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); confirmPick(); }
+            else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closePickModal(); }
+        },
         loadState(json) {
             try {
                 const parsed = typeof json === 'string' ? JSON.parse(json) : json;
@@ -1574,6 +1708,7 @@
         },
         hide() {
             document.getElementById('hkp-root').classList.add('hkp-hidden');
+            if (pick) endPick();
             hideContextMenu(); hideTooltip();
             if (moveMode) exitMoveMode();
             if (colorMode) exitColorMode();

@@ -1,5 +1,6 @@
 #include "InputHandler.h"
 #include "PrismaUIBridge.h"
+#include "PickMode.h"
 
 #include <Windows.h>  // GetKeyState + VK_F13..VK_F24
 
@@ -94,7 +95,7 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
         // (edit-name / profile modals, inline mouse inputs) the close keys are
         // OFF — ESC there cancels the edit in JS, Tab just blurs. Still kStop:
         // the game never sees a single key while the panel is up.
-        if (bridge->IsTextInputActive()) {
+        if (bridge->IsTextInputActive() || bridge->IsPickModalOpen()) {
             return RE::BSEventNotifyControl::kStop;
         }
 
@@ -114,6 +115,14 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
                 bridge->HideUI();
                 break;
             }
+            // --Claude 2026-09-28 MCM key picker: a REAL key pressed while the panel waits for a
+            // pick binds that key, exactly as without the panel - close it and let the press run
+            // on to SKSE's remap handler (the sink after ours) instead of swallowing it.
+            if (bridge->IsPickActive()) {
+                SKSE::log::info("InputHandler: key {} pressed in the MCM key picker - the MCM takes it", code);
+                bridge->HideUI();
+                return RE::BSEventNotifyControl::kContinue;
+            }
         }
         return RE::BSEventNotifyControl::kStop;
     }
@@ -121,6 +130,7 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
     // ----------------------------------------------------------------
     // Panel HIDDEN: watch for toggle key.
     // ----------------------------------------------------------------
+    if (PickMode::IsInjecting()) return RE::BSEventNotifyControl::kContinue;  // our key for the MCM, not a toggle
     if (!m_toggleEnabled.load()) return RE::BSEventNotifyControl::kContinue;
     if (IsBlockingMenuOpen()) return RE::BSEventNotifyControl::kContinue;
 

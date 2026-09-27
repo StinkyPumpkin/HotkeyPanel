@@ -14,6 +14,7 @@ add_commonlibsse_plugin(${PROJECT_NAME} SOURCES
     src/InputHandler.cpp
     src/BlockerMenu.cpp
     src/KeyPress.cpp
+    src/PickMode.cpp
     src/MsvcShim.cpp
 )
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
