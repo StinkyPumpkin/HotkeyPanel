@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <Windows.h>
 
 namespace {
     constexpr const char* kJournal = "Journal Menu";
@@ -177,4 +178,44 @@ void PickMode::InjectAfter(std::uint32_t a_code, int a_delayMs) {
         std::this_thread::sleep_for(std::chrono::milliseconds(60));
         tasks->AddTask([a_code, sentDown]() { if (sentDown->load()) Send(a_code, false); });
     }).detach();
+}
+
+// ---------------------------------------------------------------------------------------------
+// --Claude 2026-09-28: SKSE Menu Framework link (exports of our SMF fork, looked up by name).
+namespace {
+    struct SmfApi {
+        bool (*isOpen)()                  = nullptr;
+        void (*setOverlay)(bool)          = nullptr;
+        void (*reserveKey)(std::uint32_t) = nullptr;
+        void (*injectKey)(std::uint32_t)  = nullptr;
+        bool resolved = false;
+    };
+
+    SmfApi& Smf() {
+        static SmfApi api;
+        if (!api.resolved) {
+            api.resolved = true;
+            if (HMODULE m = ::GetModuleHandleW(L"SKSEMenuFramework.dll")) {
+                api.isOpen     = reinterpret_cast<bool (*)()>(::GetProcAddress(m, "IsAnyBlockingWindowOpened"));
+                api.setOverlay = reinterpret_cast<void (*)(bool)>(::GetProcAddress(m, "SetExternalOverlay"));
+                api.reserveKey = reinterpret_cast<void (*)(std::uint32_t)>(::GetProcAddress(m, "SetReservedKey"));
+                api.injectKey  = reinterpret_cast<void (*)(std::uint32_t)>(::GetProcAddress(m, "InjectKey"));
+            }
+            SKSE::log::info("PickMode: SKSE Menu Framework {}; key picker for its pages {}",
+                            api.isOpen ? "found" : "not found",
+                            api.setOverlay && api.reserveKey && api.injectKey ? "available" : "UNAVAILABLE (needs the SMF fork)");
+        }
+        return api;
+    }
+}
+
+bool PickMode::SmfWindowOpen() { auto& a = Smf(); return a.isOpen && a.isOpen(); }
+bool PickMode::SmfPickAvailable() { auto& a = Smf(); return a.setOverlay && a.reserveKey && a.injectKey; }
+void PickMode::SmfSetOverlay(bool a_on) { if (auto f = Smf().setOverlay) f(a_on); }
+void PickMode::SmfReserveKey(std::uint32_t a_dik) { if (auto f = Smf().reserveKey) f(a_dik); }
+void PickMode::SmfInject(std::uint32_t a_code) {
+    if (auto f = Smf().injectKey) {
+        SKSE::log::info("PickMode: sending key {} to the SKSE Menu Framework page", a_code);
+        f(a_code);
+    }
 }

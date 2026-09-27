@@ -78,6 +78,7 @@ namespace {
     // menu cycle is exactly what the pulse imitates), so never pulse while one is open.
     // Main thread (every caller runs inside an AddTask).
     bool OtherCursorMenuOpen(std::string& a_which) {
+        if (PickMode::SmfWindowOpen()) { a_which = "SKSE Menu Framework window"; return true; }
         auto* ui = RE::UI::GetSingleton();
         if (!ui) return false;
         const auto cursor  = ui->GetMenu("Cursor Menu");
@@ -532,6 +533,10 @@ void PrismaUIBridge::RegisterJSListeners() {
         SKSE::log::info("UI: hkpPickKey {}", code);
         if (auto* task = SKSE::GetTaskInterface()) {
             task->AddTask([code]() {
+                if (g_bridge && g_bridge->IsPickManual()) {
+                    g_bridge->FinishManualPick(static_cast<std::uint32_t>(code));   // SKSE Menu Framework page
+                    return;
+                }
                 if (g_bridge && g_bridge->IsVisible()) g_bridge->HideUI();
                 PickMode::InjectAfter(static_cast<std::uint32_t>(code), 150);
             });
@@ -618,11 +623,28 @@ void PrismaUIBridge::ShowPick(const std::string& a_infoJson) {
     InvokeJS("HKP.startPick(" + a_infoJson + ")");
 }
 
+void PrismaUIBridge::ShowManualPick() {
+    if (!m_ready || !m_api || !m_domReady || IsVisible()) return;
+    PickMode::SmfSetOverlay(true);   // SMF hands every key and click to us until HideUI
+    m_pickModal.store(false);
+    m_pickActive.store(true);
+    m_pickManual.store(true);
+    ShowUI();
+    InvokeJS("HKP.startPick({\"manual\":true,\"current\":-1})");
+    SKSE::log::info("PrismaUIBridge: key picker opened over an SKSE Menu Framework window");
+}
+
+void PrismaUIBridge::FinishManualPick(std::uint32_t a_code) {
+    HideUI();                     // releases SMF first, so the key lands in the waiting mod
+    PickMode::SmfInject(a_code);
+}
+
 void PrismaUIBridge::HideUI() {
     if (!m_ready || !m_api || !IsVisible()) return;
     m_textInput.store(false);  // never leave the text-input gate armed after close
     m_pickModal.store(false);
-    if (m_pickActive.exchange(false)) SKSE::log::info("PrismaUIBridge: MCM key picker closed");
+    if (m_pickActive.exchange(false)) SKSE::log::info("PrismaUIBridge: key picker closed");
+    if (m_pickManual.exchange(false)) PickMode::SmfSetOverlay(false);
     InvokeJS("HKP.hide()");
     m_api->Unfocus(m_view);
     m_api->Hide(m_view);

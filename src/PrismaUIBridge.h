@@ -38,6 +38,11 @@ public:
     bool IsPickActive() const { return m_pickActive.load(); }
     bool IsPickModalOpen() const { return m_pickModal.load(); }
     bool PickEnabled() const { return m_pickEnabled.load(); }
+    // --Claude: the same picker over an SKSE Menu Framework window, opened by the toggle key.
+    // Bind (or a real key) hands the key to the SMF mods through PickMode::SmfInject.
+    void ShowManualPick();
+    bool IsPickManual() const { return m_pickManual.load(); }
+    void FinishManualPick(std::uint32_t a_code);
 
     // --Claude console guard (PEM-proven pattern): closes the Console the instant it
     // opens over the visible panel — kStop can't stop it (menu input runs first).
@@ -71,5 +76,6 @@ private:
     std::atomic<bool> m_pickActive{false};
     std::atomic<bool> m_pickModal{false};
     std::atomic<bool> m_pickEnabled{true};   // settings.pickMode, pushed by the panel
+    std::atomic<bool> m_pickManual{false};   // picker is over an SKSE Menu Framework window
     bool m_pauseOnShow = true;
 };
