@@ -19,6 +19,22 @@ load-order slot consumed.
 - **Game-pause + input isolation** — the panel pauses the world; other mods' `RegisterForKey` handlers don't fire while it's open
 - **Pure SKSE** — no ESP, no .pex, no Papyrus VM cost
 - **Persistence in JSON** — `Data/SKSE/Plugins/HotkeyPanel/hotkeys.json` (atomic writes, `.bak` on every save), survives new games
+- **Tablet / phone remote** — open the panel in the browser of any tablet or phone on your home network and tap a key to fire it in game (see below)
+
+## Tablet / phone remote
+
+Settings → **Tablet / phone remote** → Enabled. The row then shows the address to open on the
+tablet, e.g. `http://192.168.0.110:8950` (the port is editable). Any browser works: Android,
+iPad, a second PC.
+
+- **Tap** a labelled key to fire it in game, exactly like holding it in the in-game panel
+  (current layer, modifiers and tap mode included). Green flash = the game took it.
+- **Long press** a key for its menu (rename, colour, profiles, Move Key). Edits sync both ways
+  through `hotkeys.json`, live.
+- **Full screen** button in the top bar; `● Connected` shows whether the game is reachable.
+- Off by default. It only answers devices on the local network (10.x, 172.16–31.x, 192.168.x).
+  The first time, Windows asks whether Skyrim may accept connections: allow it for the network
+  your PC is on (if your network is set to *Public*, tick Public, or switch it to Private).
 
 ## Requirements
 
@@ -47,6 +63,8 @@ src/                  C++ SKSE plugin sources
   InputHandler.*      BSInputDeviceManager sink — owns the toggle key,
                       menu blocklist, Esc/Tab close, input swallow while open
   JsonStore.*         Atomic load/save of hotkeys.json
+  RemoteServer.*      Tablet remote: serves the view over HTTP (cpp-httplib),
+                      /api/press, /api/state (long-poll + versioned saves)
 include/
   PrismaUI_API.h      Public PrismaUI SDK header (used for plugin API binding)
 dist/                 Files shipped to the player's Data folder
@@ -55,6 +73,9 @@ dist/                 Files shipped to the player's Data folder
     css/hkp.css       Skyrim-styled CSS — gold/dark, EB Garamond serif
     js/hkp.js         All UI logic, state, persistence, key/mouse rendering
     img/mouse_clean.png  Mouse silhouette (transparent background)
+    remote/           Tablet remote only (never loaded in game): remote.js turns
+                      the panel's bridge calls into HTTP requests, remote.css
+                      fits the page to a touch screen
 branding/             Nexus banner + thumbnail (SVG + PNG)
 CMakeLists.txt        Build config (CommonLibSSE-NG via vcpkg)
 vcpkg.json            Pinned deps

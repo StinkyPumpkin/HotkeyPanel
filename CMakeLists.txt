@@ -15,10 +15,17 @@ add_commonlibsse_plugin(${PROJECT_NAME} SOURCES
     src/BlockerMenu.cpp
     src/KeyPress.cpp
     src/PickMode.cpp
+    src/RemoteServer.cpp
     src/MsvcShim.cpp
 )
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
 target_precompile_headers(${PROJECT_NAME} PRIVATE PCH.h)
+
+# Tablet remote: header-only cpp-httplib. Its TU skips the CommonLib PCH because httplib has to
+# include winsock2.h before anything includes windows.h.
+find_path(CPP_HTTPLIB_INCLUDE_DIRS "httplib.h" REQUIRED)
+target_include_directories(${PROJECT_NAME} PRIVATE ${CPP_HTTPLIB_INCLUDE_DIRS})
+set_source_files_properties(src/RemoteServer.cpp PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 
 target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/src

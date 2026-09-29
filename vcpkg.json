@@ -3,6 +3,10 @@
     "name": "hotkey-panel-prisma",
     "version-string": "1.0.0",
     "dependencies": [
-        "commonlibsse-ng"
+        "commonlibsse-ng",
+        {
+            "name": "cpp-httplib",
+            "default-features": false
+        }
     ]
 }

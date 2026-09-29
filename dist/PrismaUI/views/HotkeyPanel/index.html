@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Hotkey Panel</title>
-    <link rel="stylesheet" href="css/hkp.css?v=19">
+    <link rel="stylesheet" href="css/hkp.css?v=20">
 </head>
 <body>
 <div id="hkp-root" class="hkp-hidden">
@@ -130,7 +130,7 @@
             <button class="hkp-close-btn" onclick="HKP.toggleSettings()">&times;</button>
         </div>
         <div class="hkp-settings-body">
-            <div class="hkp-setting-row">
+            <div class="hkp-setting-row" id="hkp-row-toggle">
                 <div class="hkp-setting-label">
                     Toggle UI hotkey
                     <div class="hkp-setting-hint">Global key that opens/closes this panel. Reserved and not editable as a regular key.</div>
@@ -143,7 +143,7 @@
                     </label>
                 </div>
             </div>
-            <div class="hkp-setting-row">
+            <div class="hkp-setting-row" id="hkp-row-pick">
                 <div class="hkp-setting-label">
                     MCM key picker
                     <div class="hkp-setting-hint">When an MCM asks you to press a key, this panel opens over it. Click a key (on any layer) to bind it, then name and colour it. Pressing a real key still binds it straight away; ESC goes back to the MCM's own prompt. SKSE menu pages: click the page's "press a key" button, then press this panel's toggle key.</div>
@@ -155,7 +155,7 @@
                     </label>
                 </div>
             </div>
-            <div class="hkp-setting-row">
+            <div class="hkp-setting-row" id="hkp-row-font">
                 <div class="hkp-setting-label">
                     UI font
                     <div class="hkp-setting-hint">Any font installed on your PC. Applies to the whole panel and your labels.</div>
@@ -176,7 +176,7 @@
                     <span id="hkp-label-size-val" class="hkp-scale-val">18</span>
                 </div>
             </div>
-            <div class="hkp-setting-row">
+            <div class="hkp-setting-row" id="hkp-row-scale">
                 <div class="hkp-setting-label">
                     Panel size
                     <div class="hkp-setting-hint">Shrink the whole panel. 100% = full size; minimum is 1/8 (12%).</div>
@@ -188,7 +188,7 @@
                     <span id="hkp-panel-scale-val" class="hkp-scale-val">100%</span>
                 </div>
             </div>
-            <div class="hkp-setting-row">
+            <div class="hkp-setting-row" id="hkp-row-opacity">
                 <div class="hkp-setting-label">
                     Panel transparency
                     <div class="hkp-setting-hint">Opacity of the whole panel. 100% = solid; lower = see-through.</div>
@@ -199,12 +199,30 @@
                     <span id="hkp-panel-opacity-val" class="hkp-scale-val">100%</span>
                 </div>
             </div>
+            <div class="hkp-setting-row" id="hkp-row-remote">
+                <div class="hkp-setting-label">
+                    Tablet / phone remote
+                    <div class="hkp-setting-hint">Open this panel in the web browser of a tablet or phone on your home network. Tapping a labelled key there fires it in game; a long press is the key's menu. Edits sync both ways. The first time, Windows may ask to let Skyrim through the firewall.</div>
+                    <div class="hkp-setting-hint hkp-remote-status" id="hkp-remote-status">Off.</div>
+                </div>
+                <div class="hkp-setting-control">
+                    <label class="hkp-check">
+                        <input type="checkbox" id="hkp-remote-enabled" onchange="HKP.setRemote(this.checked)">
+                        <span>Enabled</span>
+                    </label>
+                    <label class="hkp-check">
+                        <span>Port</span>
+                        <input type="text" class="hkp-port-input" id="hkp-remote-port" maxlength="5" value="8950"
+                               onchange="HKP.setRemotePort(this.value)">
+                    </label>
+                </div>
+            </div>
         </div>
     </div>
 
 </div>
 
 <script src="js/gkeys.js?v=1"></script>
-<script src="js/hkp.js?v=22"></script>
+<script src="js/hkp.js?v=23"></script>
 </body>
 </html>

@@ -58,6 +58,9 @@ public:
     // HKP.setExternalHotkey; queued until the view's DOM (and saved state) is ready.
     void ApplyExternalHotkey(std::uint32_t dik, const std::string& strArg);
 
+    // --Claude 2026-09-30: tablet remote status for the Settings row (RemoteServer's status JSON).
+    void SetRemoteInfo(const std::string& json) { InvokeJS("HKP.setRemoteInfo(" + json + ")"); }
+
 private:
     PrismaUIBridge() = default;
     ~PrismaUIBridge() = default;
