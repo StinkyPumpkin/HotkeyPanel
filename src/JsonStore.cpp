@@ -2,6 +2,7 @@
 #include <SKSE/SKSE.h>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <sstream>
 
 namespace fs = std::filesystem;
@@ -33,6 +34,10 @@ namespace JsonStore {
     }
 
     bool Save(const std::string& json) {
+        // The in-game panel and the tablet remote save from different threads; both use the
+        // same .tmp file.
+        static std::mutex s_saveMx;
+        std::lock_guard lock(s_saveMx);
         try {
             fs::path p = GetStatePath();
             fs::path tmp = p; tmp += ".tmp";

@@ -4,6 +4,7 @@
 #include "BlockerMenu.h"
 #include "KeyPress.h"
 #include "PickMode.h"
+#include "RemoteServer.h"
 #include <vector>
 #include <format>
 #include <set>
@@ -346,6 +347,91 @@ void PrismaUIBridge::RegisterConsoleGuard() {
     }
 }
 
+// Fire a panel key for real: "<keyId>|<layerId>", e.g. "F5|default", "KeyB|long:ControlLeft",
+// "Numpad3|double:AltLeft+ShiftLeft". The layer is whatever the panel is currently SHOWING, so
+// what fires matches the label the user was looking at. Called from the in-game panel (Ultralight
+// thread) and from the tablet remote (server thread), so everything is marshalled.
+//
+// --Claude 2026-09-15. Ordering matters and is not optional:
+//   * HideUI() first, because InputHandler returns kStop for ALL input while the
+//     panel is visible - a key sent now would be swallowed by our own sink - and
+//     because most mods ignore hotkeys while a menu is open.
+//   * KeyPress::Fire() then waits for input to be live before the down edge, since
+//     HideUI only POSTS kHide; the menu is not gone when this task returns.
+static void TriggerPanelKey(const std::string& payload, const char* from) {
+    const auto pipe = payload.find('|');
+    const std::string keyName = payload.substr(0, pipe);
+    const std::string layerId = (pipe == std::string::npos) ? "default" : payload.substr(pipe + 1);
+
+    const auto code = InputHandler::KeyNameToDXScanCode(keyName);
+    if (!code) {
+        SKSE::log::warn("{}: hkpTriggerKey: no scan code for '{}', ignoring", from, keyName);
+        return;
+    }
+
+    std::vector<std::uint32_t> mods;
+    KeyPress::Tap tap = KeyPress::Tap::kSingle;
+    KeyPress::ParseLayer(layerId, mods, tap);
+
+    SKSE::log::info("{}: hkpTriggerKey '{}' layer '{}' -> code {}", from, keyName, layerId, code);
+
+    auto* task = SKSE::GetTaskInterface();
+    if (!task) return;
+    task->AddTask([mods, code, tap]() {
+        if (g_bridge && g_bridge->IsVisible()) {
+            g_bridge->HideUI();
+        }
+        KeyPress::Fire(mods, code, tap);
+    });
+}
+
+// --Claude 2026-09-23 hotkey hub: "source|dik". Asks the mod that owns `source` to move its key:
+// SKSE mod event HKP_MoveHotkey (strArg = source, numArg = new DX scan code). The owner applies it
+// and re-announces through HKP_SetHotkey, which is what actually moves the key in the panel; a
+// refusal re-announces the old key.
+static void MoveModHotkey(const std::string& s, const char* from) {
+    const auto bar = s.rfind('|');
+    if (bar == std::string::npos || bar == 0) return;
+    std::string source = s.substr(0, bar);
+    const float dik = static_cast<float>(std::atoi(s.c_str() + bar + 1));
+    if (dik <= 0.0f) return;
+    SKSE::log::info("{}: hkpMoveHotkey '{}' -> {}", from, source, dik);
+    if (auto* task = SKSE::GetTaskInterface()) {
+        task->AddTask([source = std::move(source), dik]() {
+            if (auto* src = SKSE::GetModCallbackEventSource()) {
+                SKSE::ModCallbackEvent evt{ RE::BSFixedString("HKP_MoveHotkey"),
+                                            RE::BSFixedString(source), dik, nullptr };
+                src->SendEvent(&evt);
+            }
+        });
+    }
+}
+
+// --Claude 2026-09-30: what the tablet remote asks of the game. Server threads -> main thread.
+static void SetRemoteHooks() {
+    RemoteServer::Hooks hooks;
+    hooks.press = [](const std::string& payload) { TriggerPanelKey(payload, "Remote"); };
+    hooks.move  = [](const std::string& payload) { MoveModHotkey(payload, "Remote"); };
+    // A tablet edited the panel: same file as an in-game save, and the in-game view reloads it
+    // so its own next save can't put the old version back.
+    hooks.saveState = [](const std::string& json) {
+        JsonStore::Save(json);
+        if (auto* task = SKSE::GetTaskInterface()) {
+            task->AddTask([json]() {
+                if (g_bridge) g_bridge->SendState(json);
+            });
+        }
+    };
+    hooks.status = [](const std::string& json) {
+        if (auto* task = SKSE::GetTaskInterface()) {
+            task->AddTask([json]() {
+                if (g_bridge) g_bridge->SetRemoteInfo(json);
+            });
+        }
+    };
+    RemoteServer::SetHooks(std::move(hooks));
+}
+
 PrismaUIBridge* PrismaUIBridge::GetSingleton() {
     static PrismaUIBridge singleton;
     return &singleton;
@@ -369,6 +455,7 @@ bool PrismaUIBridge::Initialize() {
     }
 
     g_bridge = this;
+    SetRemoteHooks();
 
     m_view = m_api->CreateView("HotkeyPanel/index.html",
         [](PrismaView) {
@@ -383,7 +470,9 @@ bool PrismaUIBridge::Initialize() {
                 g_bridge->InvokeJS("HKP.setFonts(" + BuildFontListJson() + ")");
                 if (auto* tasks = SKSE::GetTaskInterface()) {
                     tasks->AddTask([]() {
-                        if (g_bridge) g_bridge->InvokeJS("HKP.setGameKeys(" + BuildGameKeysJson() + ")");
+                        const std::string gameKeys = BuildGameKeysJson();
+                        RemoteServer::SetGameKeys(gameKeys);
+                        if (g_bridge) g_bridge->InvokeJS("HKP.setGameKeys(" + gameKeys + ")");
                     });
                 }
             }
@@ -424,6 +513,7 @@ void PrismaUIBridge::RegisterJSListeners() {
         std::string json(data);
         SKSE::log::info("UI: hkpSaveState ({} bytes)", json.size());
         JsonStore::Save(json);
+        RemoteServer::PublishState(json);
     });
 
     // JS → DLL: user closed the UI from inside the panel (X button, etc.)
@@ -434,43 +524,8 @@ void PrismaUIBridge::RegisterJSListeners() {
 
     // JS → DLL: the user left-clicked a labelled key in the panel. Close the panel
     // and fire that key for real, so whichever mod owns the hotkey acts on it.
-    //
-    // --Claude 2026-09-15. Ordering matters and is not optional:
-    //   * HideUI() first, because InputHandler returns kStop for ALL input while the
-    //     panel is visible - a key sent now would be swallowed by our own sink - and
-    //     because most mods ignore hotkeys while a menu is open.
-    //   * KeyPress::Fire() then waits several frames before the down edge, since
-    //     HideUI only POSTS kHide; the menu is not gone when this task returns.
-    // The listener runs on the Ultralight thread, so everything is marshalled.
     m_api->RegisterJSListener(m_view, "hkpTriggerKey", [](const char* data) {
-        // Payload: "<keyId>|<layerId>"  e.g. "F5|default", "KeyB|long:ControlLeft",
-        // "Numpad3|double:AltLeft+ShiftLeft". The layer is whatever the panel is
-        // currently SHOWING, so what fires matches the label the user was looking at.
-        const std::string payload(data ? data : "");
-        const auto pipe = payload.find('|');
-        const std::string keyName = payload.substr(0, pipe);
-        const std::string layerId = (pipe == std::string::npos) ? "default" : payload.substr(pipe + 1);
-
-        const auto code = InputHandler::KeyNameToDXScanCode(keyName);
-        if (!code) {
-            SKSE::log::warn("hkpTriggerKey: no scan code for '{}', ignoring", keyName);
-            return;
-        }
-
-        std::vector<std::uint32_t> mods;
-        KeyPress::Tap tap = KeyPress::Tap::kSingle;
-        KeyPress::ParseLayer(layerId, mods, tap);
-
-        SKSE::log::info("UI: hkpTriggerKey '{}' layer '{}' -> code {}", keyName, layerId, code);
-
-        auto* task = SKSE::GetTaskInterface();
-        if (!task) return;
-        task->AddTask([mods, code, tap]() {
-            if (g_bridge && g_bridge->IsVisible()) {
-                g_bridge->HideUI();
-            }
-            KeyPress::Fire(mods, code, tap);
-        });
+        TriggerPanelKey(data ? data : "", "UI");
     });
 
     // JS → DLL: settings push. Fired once on loadState (so we learn the
@@ -506,22 +561,17 @@ void PrismaUIBridge::RegisterJSListeners() {
     // code). The owner applies it and re-announces through HKP_SetHotkey, which is what
     // actually moves the key in the panel; a refusal re-announces the old key.
     m_api->RegisterJSListener(m_view, "hkpMoveHotkey", [](const char* data) {
-        std::string s = data ? data : "";
-        const auto bar = s.rfind('|');
-        if (bar == std::string::npos || bar == 0) return;
-        std::string source = s.substr(0, bar);
-        const float dik = static_cast<float>(std::atoi(s.c_str() + bar + 1));
-        if (dik <= 0.0f) return;
-        SKSE::log::info("UI: hkpMoveHotkey '{}' -> {}", source, dik);
-        if (auto* task = SKSE::GetTaskInterface()) {
-            task->AddTask([source = std::move(source), dik]() {
-                if (auto* src = SKSE::GetModCallbackEventSource()) {
-                    SKSE::ModCallbackEvent evt{ RE::BSFixedString("HKP_MoveHotkey"),
-                                                RE::BSFixedString(source), dik, nullptr };
-                    src->SendEvent(&evt);
-                }
-            });
-        }
+        MoveModHotkey(data ? data : "", "UI");
+    });
+
+    // --Claude 2026-09-30: settings.remoteEnabled / remotePort, "1|8950". Starts or stops the
+    // tablet remote; the answer comes back as HKP.setRemoteInfo(...) for the Settings row.
+    m_api->RegisterJSListener(m_view, "hkpSetRemote", [](const char* data) {
+        const std::string s = data ? data : "";
+        const auto bar = s.find('|');
+        const bool on = !s.empty() && s[0] == '1';
+        const int port = bar == std::string::npos ? 0 : std::atoi(s.c_str() + bar + 1);
+        RemoteServer::Configure(on, port);
     });
 
     // --Claude 2026-09-28 MCM key picker. JS -> DLL "dik": the key the user clicked (and named) in
@@ -565,6 +615,7 @@ void PrismaUIBridge::RegisterJSListeners() {
 void PrismaUIBridge::PushInitialState() {
     if (m_initialStateSent.exchange(true)) return;
     std::string json = JsonStore::Load();
+    RemoteServer::PublishState(json);   // before SendState: the panel's reply may start the server
     if (json.empty()) {
         // First run — let the UI use its built-in DEFAULT_STATE
         SKSE::log::info("PrismaUIBridge: No saved state, UI will start with defaults");

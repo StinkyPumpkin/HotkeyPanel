@@ -539,6 +539,11 @@ body.hkp-color-mode .hkp-key:not(.hkp-reserved) { cursor: crosshair; }
 
 .hkp-check { display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; color: var(--hkp-text-dim); }
 .hkp-check input { accent-color: var(--hkp-gold); }
+/* --Claude 2026-09-30 tablet remote row */
+.hkp-port-input { width: 64px; padding: 3px 6px; font-family: monospace; font-size: 13px; color: var(--hkp-text);
+    background: rgba(0, 0, 0, 0.35); border: 1px solid var(--hkp-border); border-radius: 3px; }
+.hkp-remote-status { font-style: normal; color: var(--hkp-gold); font-family: monospace; font-size: 12px; }
+.hkp-remote-status.hkp-remote-bad { color: #e0493b; }
 
 .hkp-switch { position: relative; display: inline-block; width: 44px; height: 22px; }
 .hkp-switch input { opacity: 0; width: 0; height: 0; }

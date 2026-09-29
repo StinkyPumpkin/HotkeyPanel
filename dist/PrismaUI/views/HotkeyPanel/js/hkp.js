@@ -4,6 +4,10 @@
 (function () {
     'use strict';
 
+    // --Claude 2026-09-30: true when this page runs on a tablet / phone (remote/remote.js, served
+    // by the DLL's RemoteServer) instead of in game. A tap fires a key there - see onKeyClick.
+    const REMOTE = !!window.HKP_REMOTE;
+
     // ---------------------------------------------------------------
     // Layout data (main / nav / numpad / mouse)
     // Each main-row key: [keyId, caption, widthU?]  where widthU defaults to 1.
@@ -158,7 +162,9 @@
             panelScale: 100,    // percent, 12..100
             panelOpacity: 100,  // percent, 20..100
             fontFamily: '',     // --Claude: '' = default EB Garamond stack
-            pickMode: true      // --Claude: open over an MCM that asks for a key (MCM key picker)
+            pickMode: true,     // --Claude: open over an MCM that asks for a key (MCM key picker)
+            remoteEnabled: false, // --Claude 2026-09-30: serve the panel to a tablet on the home network
+            remotePort: 8950
         },
         profiles: [{ name: 'DEFAULT', system: true }],
         activeProfile: 'DEFAULT',
@@ -232,6 +238,7 @@
         const key = state.settings.toggleKey || 'F11';
         dispatchToBridge('hkpSetToggleKey', enabled + '|' + key);
         dispatchToBridge('hkpSetPickMode', state.settings.pickMode === false ? '0' : '1');
+        pushRemoteToDLL();
     }
 
     // Fit keyboard to available width/height of its container. Profiles sidebar now
@@ -605,9 +612,20 @@
         if (isReservedKey(keyId)) return;
         if (state.modifierKeys.includes(keyId)) { toggleActiveModifier(keyId); return; }
         if (colorMode !== null) { applyColor(keyId); return; }
+        if (REMOTE) { remoteFire(keyId); return; }
         // Firing the hotkey is NOT done here — a plain click is too easy to do by
         // accident on a panel you are also editing. It is a press-and-hold instead;
         // see startHold() below. This branch intentionally does nothing now.
+    }
+
+    // --Claude 2026-09-30 tablet remote: a tap fires at once. Touch has no hold here - the browser
+    // sends mousedown and mouseup together when the finger lifts - and a long press is the key's
+    // menu (Android fires contextmenu), so the lift after that menu must not fire the key too.
+    let lastCtxAt = 0;
+    function remoteFire(keyId) {
+        if (Date.now() - lastCtxAt < 800) return;
+        if (!canTriggerKey(keyId)) return;
+        dispatchToBridge('hkpTriggerKey', keyId + '|' + currentLayerId());
     }
 
     // ================= hold-to-fire (SkyPrompt style) =================
@@ -640,6 +658,7 @@
 
     function startHold(keyId, el) {
         cancelHold();
+        if (REMOTE) return;   // a tap fires on the tablet (remoteFire)
         if (!canTriggerKey(keyId)) return;
 
         // The overlay is absolutely positioned inside the key, so the key must be a
@@ -750,6 +769,7 @@
     }
 
     function onKeyContext(keyId, el, evt) {
+        lastCtxAt = Date.now();
         if (pick) return;
         if (moveMode) { exitMoveMode(); return; }
         if (isReservedKey(keyId)) {
@@ -1085,6 +1105,9 @@
         document.getElementById('hkp-panel-opacity').value = po;
         document.getElementById('hkp-panel-opacity-val').textContent = po + '%';
         syncFontButton();
+        document.getElementById('hkp-remote-enabled').checked = !!state.settings.remoteEnabled;
+        document.getElementById('hkp-remote-port').value = Number(state.settings.remotePort) || 8950;
+        syncRemoteStatus();
     }
     function setLabelSize(val) {
         const sz = Math.max(10, Math.min(36, Number(val) || 18));
@@ -1183,6 +1206,45 @@
         applyFont();
         save();
     }
+    // --Claude 2026-09-30 tablet remote (src/RemoteServer.cpp). The DLL answers every
+    // hkpSetRemote with HKP.setRemoteInfo({running, port, urls, error}).
+    let remoteInfo = null;
+    function pushRemoteToDLL() {
+        dispatchToBridge('hkpSetRemote',
+            (state.settings.remoteEnabled ? '1' : '0') + '|' + (Number(state.settings.remotePort) || 8950));
+    }
+    function setRemote(val) {
+        state.settings.remoteEnabled = !!val;
+        syncRemoteStatus();
+        pushRemoteToDLL();
+        save();
+    }
+    function setRemotePort(val) {
+        const port = Math.round(Number(val));
+        state.settings.remotePort = (port >= 1024 && port <= 65535) ? port : 8950;
+        document.getElementById('hkp-remote-port').value = state.settings.remotePort;
+        pushRemoteToDLL();
+        save();
+    }
+    function setRemoteInfo(info) {
+        remoteInfo = info || null;
+        syncRemoteStatus();
+    }
+    function syncRemoteStatus() {
+        const el = document.getElementById('hkp-remote-status');
+        if (!el) return;
+        const i = remoteInfo;
+        let text = 'Off.';
+        if (state.settings.remoteEnabled) {
+            if (!i || (!i.running && !i.error)) text = 'Starting…';
+            else if (i.error) text = i.error + '.';
+            else if (i.urls && i.urls.length) text = 'On the tablet, open  ' + i.urls.join('  or  ');
+            else text = 'Running on port ' + i.port + ', but this PC has no home-network address.';
+        }
+        el.textContent = text;
+        el.classList.toggle('hkp-remote-bad', !!(state.settings.remoteEnabled && i && i.error));
+    }
+
     function setPickMode(val) {
         state.settings.pickMode = !!val;
         dispatchToBridge('hkpSetPickMode', val ? '1' : '0');
@@ -1747,6 +1809,7 @@
         toggleSettings, setToggleEnabled, startBindToggleKey, exitColorMode, cycleTapMode, setLabelSize,
         setPanelScale, previewPanelScale, setPanelOpacity,
         setFonts, toggleFontDD, pickFont,
+        setRemote, setRemotePort, setRemoteInfo,
         saveEdit: () => saveEditInternal(),
         cancelEdit: () => cancelEdit(),
         onEditKeydown: (e) => { if (e.key === 'Enter') saveEditInternal(); else if (e.key === 'Escape') cancelEdit(); },
