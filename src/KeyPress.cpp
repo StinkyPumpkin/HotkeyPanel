@@ -12,6 +12,8 @@
 #include <thread>
 #include <vector>
 
+namespace HKPFocusRecovery { bool IsConsoleOwned(); }   // PrismaUIBridge.cpp
+
 namespace {
 
     // BSInputDevice::SetButtonState, reached through our own relocation.
@@ -74,9 +76,16 @@ namespace {
     // every mod's hotkey handler ignores it.
     //
     // MAIN THREAD ONLY - called from inside an AddTask.
-    bool InputIsLive() {
+    //
+    // --Claude 2026-10-01: a tablet press while another menu is open (SLUI, Tween, an MCM) waited
+    // for gameplay that never came and was dropped after 4 s - SLUI opened from the tablet could
+    // not be closed from it. Without a_gameplay only HKP's own pieces must be gone.
+    bool InputIsLive(bool a_gameplay) {
         auto* ui = RE::UI::GetSingleton();
         if (!ui) return false;
+        if (ui->IsMenuOpen("HKP_Blocker")) return false;
+        if (HKPFocusRecovery::IsConsoleOwned()) return false;
+        if (!a_gameplay) return true;
         if (ui->GameIsPaused()) return false;
         if (ui->IsMenuOpen(RE::Console::MENU_NAME)) return false;
         if (ui->IsMenuOpen(RE::CursorMenu::MENU_NAME)) return false;
@@ -89,7 +98,7 @@ namespace {
     constexpr int kProbeIntervalMs = 50;
     constexpr int kMaxGateMs       = 4000;
 
-    void Worker(std::shared_ptr<std::vector<Edge>> a_script) {
+    void Worker(std::shared_ptr<std::vector<Edge>> a_script, bool a_gameplay) {
         using namespace std::chrono_literals;
 
         // Gate: poll the real condition on the main thread until input is live.
@@ -98,8 +107,8 @@ namespace {
         while (waitedMs < kMaxGateMs) {
             g_liveProbe.store(-1, std::memory_order_relaxed);
             if (auto* task = SKSE::GetTaskInterface()) {
-                task->AddTask([]() {
-                    g_liveProbe.store(InputIsLive() ? 1 : 0, std::memory_order_relaxed);
+                task->AddTask([a_gameplay]() {
+                    g_liveProbe.store(InputIsLive(a_gameplay) ? 1 : 0, std::memory_order_relaxed);
                 });
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(kProbeIntervalMs));
@@ -173,7 +182,8 @@ bool KeyPress::ParseLayer(const std::string& a_layerId, std::vector<std::uint32_
     return true;
 }
 
-void KeyPress::Fire(const std::vector<std::uint32_t>& a_mods, std::uint32_t a_code, Tap a_tap) {
+void KeyPress::Fire(const std::vector<std::uint32_t>& a_mods, std::uint32_t a_code, Tap a_tap,
+                    bool a_waitForGameplay) {
     if (!a_code) return;
 
     constexpr int kModSettleMs = 48;    // modifiers must be DOWN before the key edge
@@ -208,10 +218,11 @@ void KeyPress::Fire(const std::vector<std::uint32_t>& a_mods, std::uint32_t a_co
         firstUp = false;
     }
 
-    SKSE::log::info("KeyPress: queued code {} tap={} mods={} ({} edges) - waiting for input to be live",
+    SKSE::log::info("KeyPress: queued code {} tap={} mods={} ({} edges) - waiting for {}",
                     a_code,
                     a_tap == Tap::kDouble ? "double" : (a_tap == Tap::kLong ? "long" : "single"),
-                    a_mods.size(), script->size());
+                    a_mods.size(), script->size(),
+                    a_waitForGameplay ? "input to be live" : "HKP's own menus only (menus stay open)");
 
-    std::thread(Worker, script).detach();
+    std::thread(Worker, script, a_waitForGameplay).detach();
 }

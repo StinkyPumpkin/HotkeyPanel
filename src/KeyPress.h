@@ -35,7 +35,13 @@ namespace KeyPress {
     //      anything fired too early is eaten by our own sink.
     //
     // Safe to call from any thread; the work is marshalled onto the main thread.
-    void Fire(const std::vector<std::uint32_t>& a_mods, std::uint32_t a_code, Tap a_tap);
+    //
+    // --Claude 2026-10-01: a_waitForGameplay = the panel was just closed for this press, so wait
+    // until the game is back in gameplay (no pause, Console or Cursor Menu). A tablet press with
+    // the panel shut passes false: the key goes to whatever is open NOW (a menu's own close key,
+    // Esc, Tab), and only HKP's own teardown (blocker, recovery console) is waited out.
+    void Fire(const std::vector<std::uint32_t>& a_mods, std::uint32_t a_code, Tap a_tap,
+              bool a_waitForGameplay = true);
 
     // Parse the panel's layer id ("default", "ControlLeft+ShiftLeft",
     // "double:default", "long:AltLeft") into modifiers + tap mode. Returns false
