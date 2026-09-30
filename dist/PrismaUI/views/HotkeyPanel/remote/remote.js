@@ -24,6 +24,58 @@
 
     const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+    // Per-device settings (this tablet only, never the in-game panel). Storage can be blocked.
+    function stored(key, fallback) {
+        try { const v = localStorage.getItem('hkpR.' + key); return v === null ? fallback : v; } catch (_) { return fallback; }
+    }
+    function store(key, value) {
+        try { localStorage.setItem('hkpR.' + key, String(value)); } catch (_) {}
+    }
+
+    // ---------------------------------------------------------------
+    // Labels: this device's own size, and each label shrunk until it fits its key
+    // ---------------------------------------------------------------
+    const LABEL_MIN = 6;
+    let fitQueued = false;
+
+    function overflows(el, box) {
+        // Strict on width: a label 1 px too wide is already cut with an ellipsis.
+        return el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight + 1 ||
+               (box && box.scrollHeight > box.clientHeight + 1);
+    }
+
+    function fitLabels() {
+        fitQueued = false;
+        const base = window.HKP_REMOTE_LABEL.get();
+        document.querySelectorAll('.hkp-key-label:not(.hkp-empty), .hkp-m-label').forEach((el) => {
+            el.style.fontSize = '';
+            el.classList.remove('hkp-r-tiny');
+            if (!el.textContent) return;
+            const box = el.closest('.hkp-key, .hkp-m-input');
+            let size = base;
+            while (size > LABEL_MIN && overflows(el, box)) {
+                size -= 1;
+                el.style.fontSize = size + 'px';
+            }
+            // Still too long at the smallest size: let a long word break instead of vanishing.
+            if (overflows(el, box)) el.classList.add('hkp-r-tiny');
+        });
+    }
+
+    window.HKP_REMOTE_LABEL = {
+        get() { return Math.max(LABEL_MIN, Math.min(36, Number(stored('labelSize', 14)) || 14)); },
+        set(val) {
+            const sz = Math.max(LABEL_MIN, Math.min(36, Number(val) || 14));
+            store('labelSize', sz);
+            return sz;
+        },
+        fit() {
+            if (fitQueued) return;
+            fitQueued = true;
+            requestAnimationFrame(fitLabels);
+        }
+    };
+
     function post(path, body) {
         return fetch(path, {
             method: 'POST',
@@ -105,6 +157,7 @@
         version = env.v;
         if (env.state) window.HKP.loadState(env.state);
         if (!shown) { shown = true; window.HKP.show(); }
+        relayout();
     }
 
     async function poll() {
@@ -133,12 +186,42 @@
     }
 
     // ---------------------------------------------------------------
-    // Top bar: connection dot + full screen
+    // Top bar: fold buttons, connection dot, full screen
     // ---------------------------------------------------------------
+    function relayout() {
+        if (window.HKP.layout) window.HKP.layout();
+        window.HKP_REMOTE_LABEL.fit();
+    }
+
+    // A section the tablet can fold away so the keyboard gets the room. Remembered on this device.
+    function addFold(bar, before, label, bodyClass, key) {
+        const btn = document.createElement('button');
+        btn.className = 'hkp-topbar-btn';
+        btn.textContent = label;
+        const sync = () => {
+            const shown = !document.body.classList.contains(bodyClass);
+            btn.classList.toggle('hkp-r-on', shown);
+            btn.title = (shown ? 'Hide ' : 'Show ') + label.toLowerCase();
+        };
+        document.body.classList.toggle(bodyClass, stored(key, '0') !== '1');
+        btn.addEventListener('click', () => {
+            const hide = !document.body.classList.contains(bodyClass);
+            document.body.classList.toggle(bodyClass, hide);
+            store(key, hide ? '0' : '1');
+            sync();
+            relayout();
+        });
+        sync();
+        bar.insertBefore(btn, before);
+    }
+
     function addTopbarBits() {
         const bar = document.querySelector('.hkp-topbar');
         const settingsBtn = document.getElementById('hkp-btn-settings');
         if (!bar) return;
+
+        addFold(bar, settingsBtn, 'Colours', 'hkp-r-no-swatches', 'swatches');
+        addFold(bar, settingsBtn, 'Mouse & profiles', 'hkp-r-no-bottom', 'bottom');
 
         connEl = document.createElement('div');
         connEl.className = 'hkp-r-conn';
@@ -163,13 +246,27 @@
         document.body.appendChild(toastEl);
     }
 
+    // The label-size setting here is this device's own; say so, and let it go smaller.
+    function tuneLabelSetting() {
+        const slider = document.getElementById('hkp-label-size');
+        if (slider) slider.min = String(LABEL_MIN);
+        const hint = document.querySelector('#hkp-row-labelsize .hkp-setting-hint');
+        if (hint) hint.textContent = 'This tablet only (the game keeps its own size). Labels also shrink by themselves until they fit their key.';
+    }
+
     // 'load' runs after hkp.js has built the keyboard on DOMContentLoaded.
     window.addEventListener('load', () => {
         addTopbarBits();
+        tuneLabelSetting();
         setConn(false);
         loadGameKeys();
         poll();
+        // Labels change on every edit and state sync: re-fit them whenever the key text does.
+        const watch = new MutationObserver(() => window.HKP_REMOTE_LABEL.fit());
+        document.querySelectorAll('.hkp-keyboard, #hkp-mouse-stage').forEach((el) =>
+            watch.observe(el, { childList: true, subtree: true, characterData: true }));
         // Rotating the tablet: re-fit the keys (HKP.show re-runs the layout).
-        window.addEventListener('resize', () => { if (shown) window.HKP.show(); });
+        window.addEventListener('resize', () => { if (shown) { window.HKP.show(); relayout(); } });
+        relayout();
     });
 })();
