@@ -155,6 +155,23 @@
                     </label>
                 </div>
             </div>
+            <div class="hkp-setting-row" id="hkp-row-scan">
+                <div class="hkp-setting-label">
+                    Mod keys from config files
+                    <div class="hkp-setting-hint">Reads mods' hotkeys from their settings files (MCM Helper menus, SKSE plugin ini / json) when the game starts and when this panel opens. Files are only read, never changed. Classic MCM keys still appear once you bind them in the MCM. Right-click a key to mark one that only works inside its own menu, or to remove it.</div>
+                    <div class="hkp-setting-hint hkp-remote-status" id="hkp-scan-status">Not scanned yet.</div>
+                    <div class="hkp-scan-actions">
+                        <button class="hkp-btn" onclick="HKP.rescanConfigs()">Rescan</button>
+                        <button class="hkp-btn hkp-hidden" id="hkp-scan-restore" onclick="HKP.restoreScanHidden()">Restore removed</button>
+                    </div>
+                </div>
+                <div class="hkp-setting-control">
+                    <label class="hkp-check">
+                        <input type="checkbox" id="hkp-scan-enabled" onchange="HKP.setScanConfigs(this.checked)">
+                        <span>Enabled</span>
+                    </label>
+                </div>
+            </div>
             <div class="hkp-setting-row" id="hkp-row-font">
                 <div class="hkp-setting-label">
                     UI font

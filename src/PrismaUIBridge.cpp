@@ -5,6 +5,7 @@
 #include "KeyPress.h"
 #include "PickMode.h"
 #include "RemoteServer.h"
+#include "HotkeyScan.h"
 #include <vector>
 #include <format>
 #include <set>
@@ -18,6 +19,11 @@
 #include <Windows.h>
 
 static PrismaUIBridge* g_bridge = nullptr;
+
+// --Claude 2026-10-01: config-file hotkey scan (HotkeyScan.cpp). Defined after SteadyMs().
+static void RequestScan(bool force);
+static std::atomic<bool> g_scanEnabled{ true };      // settings.scanConfigs, pushed by the panel
+static std::atomic<long long> g_lastScanMs{ 0 };
 
 // --Claude focus recovery (ported from PEM, origin: archived sexlab-p-prism): after
 // closing the panel, verify PrismaUI actually released focus AND its FocusMenu, retry
@@ -467,6 +473,7 @@ bool PrismaUIBridge::Initialize() {
                 // external hotkeys that arrived before the view existed (saved state is loaded now)
                 for (const auto& js : g_bridge->m_pendingJS) g_bridge->InvokeJS(js);
                 g_bridge->m_pendingJS.clear();
+                RequestScan(false);   // lands after the saved state (Invokes run in order)
                 g_bridge->InvokeJS("HKP.setFonts(" + BuildFontListJson() + ")");
                 if (auto* tasks = SKSE::GetTaskInterface()) {
                     tasks->AddTask([]() {
@@ -609,6 +616,20 @@ void PrismaUIBridge::RegisterJSListeners() {
             SKSE::log::info("UI: MCM key picker {}", on ? "ON" : "OFF");
     });
 
+    // --Claude 2026-10-01: Settings "Mod keys from config files": "1" / "0", or "rescan".
+    m_api->RegisterJSListener(m_view, "hkpScanConfigs", [](const char* data) {
+        const std::string s = data ? data : "";
+        if (s == "rescan") {
+            RequestScan(true);
+        } else {
+            const bool on = s == "1";
+            if (g_scanEnabled.exchange(on) != on) {
+                SKSE::log::info("UI: config-file hotkey scan {}", on ? "ON" : "OFF");
+                if (on) RequestScan(true);
+            }
+        }
+    });
+
     SKSE::log::info("PrismaUIBridge: JS listeners registered");
 }
 
@@ -668,11 +689,29 @@ void PrismaUIBridge::ShowUI() {
 
     InvokeJS("HKP.show()");
     SKSE::log::info("PrismaUIBridge: UI shown (blocker pauses, Prisma FocusMenu active)");
+    RequestScan(false);   // a key changed in a mod's menu since the last look shows up while it's open
 }
 
 static long long SteadyMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+// Scans on a worker thread; the result goes to the panel on the main thread. Unforced requests
+// (game start, panel opened) are skipped while off, and within 15 s of the last one.
+
+static void RequestScan(bool force) {
+    if (!force && !g_scanEnabled.load()) return;
+    const auto now = SteadyMs();
+    if (!force && g_lastScanMs.load() != 0 && now - g_lastScanMs.load() < 15000) return;
+    g_lastScanMs = now;
+    HotkeyScan::Start([](std::string json) {
+        if (auto* task = SKSE::GetTaskInterface()) {
+            task->AddTask([json = std::move(json)]() {
+                if (g_bridge) g_bridge->SetScannedHotkeys(json);
+            });
+        }
+    });
 }
 
 bool PrismaUIBridge::PickJustOpened() const {

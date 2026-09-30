@@ -544,6 +544,7 @@ body.hkp-color-mode .hkp-key:not(.hkp-reserved) { cursor: crosshair; }
     background: rgba(0, 0, 0, 0.35); border: 1px solid var(--hkp-border); border-radius: 3px; }
 .hkp-remote-status { font-style: normal; color: var(--hkp-gold); font-family: monospace; font-size: 12px; }
 .hkp-remote-status.hkp-remote-bad { color: #e0493b; }
+.hkp-scan-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 
 .hkp-switch { position: relative; display: inline-block; width: 44px; height: 22px; }
 .hkp-switch input { opacity: 0; width: 0; height: 0; }
