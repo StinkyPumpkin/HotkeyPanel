@@ -80,3 +80,16 @@ input, textarea {
     z-index: 10000;
 }
 .hkp-r-toast.hkp-r-show { opacity: 1; }
+
+/* Folded sections (top-bar buttons, remembered on this device). The colour bar stays up while
+   colour mode is on, since that is where it ends. */
+body.hkp-r-no-swatches .hkp-swatch-bar:not(.hkp-active) { display: none !important; }
+body.hkp-r-no-bottom .hkp-bottom { display: none !important; }
+.hkp-topbar-btn.hkp-r-on { border-color: var(--hkp-gold) !important; color: var(--hkp-gold-hi) !important; }
+
+/* Labels shrink to fit (remote.js) instead of breaking words; only a label that still does not
+   fit at the smallest size may break inside a word. */
+.hkp-key-label, .hkp-m-label { word-break: normal !important; overflow-wrap: normal !important; }
+/* Keys can be tall here (folded sections): up to 8 lines before the text has to shrink. */
+.hkp-key-label { -webkit-line-clamp: 8 !important; }
+.hkp-key-label.hkp-r-tiny, .hkp-m-label.hkp-r-tiny { overflow-wrap: anywhere !important; }

@@ -265,7 +265,19 @@
         const uH = Math.floor((availH - 20) / 6);
         const u = Math.max(40, Math.min(180, Math.min(uW, uH)));
         document.documentElement.style.setProperty('--hkp-u', u + 'px');
-        document.documentElement.style.setProperty('--hkp-key-h', u + 'px');
+        let keyH = u;
+        // --Claude 2026-09-30: on a tablet with the mouse & profiles section folded away the
+        // keyboard has the whole height, but a landscape screen keeps the keys width-bound, so
+        // they grow TALLER instead (more lines for a label) - up to 2.5x their width.
+        if (REMOTE && document.body.classList.contains('hkp-r-no-bottom')) {
+            let used = 0;
+            for (const c of main.children) {
+                if (c !== kb && c.offsetParent !== null) used += c.offsetHeight + gap + parseFloat(getComputedStyle(c).marginBottom || 0);
+            }
+            const fullH = main.clientHeight - mainPadY - used - kbPadY;
+            keyH = Math.max(u, Math.min(Math.floor((fullH - 20) / 6), Math.floor(u * 2.5)));
+        }
+        document.documentElement.style.setProperty('--hkp-key-h', keyH + 'px');
     }
 
     window.addEventListener('resize', layoutKeyboard);
@@ -1095,7 +1107,7 @@
         document.getElementById('hkp-toggle-key-btn').textContent = state.settings.toggleKey || '(unset)';
         document.getElementById('hkp-toggle-key-enabled').checked = !!state.settings.toggleKeyEnabled;
         document.getElementById('hkp-pick-enabled').checked = state.settings.pickMode !== false;
-        const sz = Number(state.settings.labelFontSize) || 18;
+        const sz = labelSize();
         document.getElementById('hkp-label-size').value = sz;
         document.getElementById('hkp-label-size-val').textContent = sz;
         const ps = Number(state.settings.panelScale) || 100;
@@ -1109,7 +1121,19 @@
         document.getElementById('hkp-remote-port').value = Number(state.settings.remotePort) || 8950;
         syncRemoteStatus();
     }
+    // --Claude 2026-09-30: a tablet / phone keeps its OWN label size (remote.js, stored on that
+    // device), so shrinking labels to fit small keys there never changes the in-game panel.
+    function labelSize() {
+        if (REMOTE && window.HKP_REMOTE_LABEL) return window.HKP_REMOTE_LABEL.get();
+        return Number(state.settings.labelFontSize) || 18;
+    }
     function setLabelSize(val) {
+        if (REMOTE && window.HKP_REMOTE_LABEL) {
+            const sz = window.HKP_REMOTE_LABEL.set(val);
+            document.getElementById('hkp-label-size-val').textContent = sz;
+            applyLabelSize();
+            return;
+        }
         const sz = Math.max(10, Math.min(36, Number(val) || 18));
         state.settings.labelFontSize = sz;
         document.getElementById('hkp-label-size-val').textContent = sz;
@@ -1117,7 +1141,8 @@
         save();
     }
     function applyLabelSize() {
-        document.documentElement.style.setProperty('--hkp-label-size', (state.settings.labelFontSize || 18) + 'px');
+        document.documentElement.style.setProperty('--hkp-label-size', labelSize() + 'px');
+        if (REMOTE && window.HKP_REMOTE_LABEL) window.HKP_REMOTE_LABEL.fit();
     }
     // Live preview while dragging — updates only the percentage label so the
     // user sees feedback without triggering an expensive layout pass on every
@@ -1807,6 +1832,7 @@
             });
         },
         toggleSettings, setToggleEnabled, startBindToggleKey, exitColorMode, cycleTapMode, setLabelSize,
+        layout: () => layoutKeyboard(),
         setPanelScale, previewPanelScale, setPanelOpacity,
         setFonts, toggleFontDD, pickFont,
         setRemote, setRemotePort, setRemoteInfo,
