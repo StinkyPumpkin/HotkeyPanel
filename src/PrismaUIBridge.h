@@ -61,6 +61,9 @@ public:
     // --Claude 2026-09-30: tablet remote status for the Settings row (RemoteServer's status JSON).
     void SetRemoteInfo(const std::string& json) { InvokeJS("HKP.setRemoteInfo(" + json + ")"); }
 
+    // --Claude 2026-10-01: a HotkeyScan result (mods' keys found in their config files).
+    void SetScannedHotkeys(const std::string& json) { InvokeJS("HKP.setScannedHotkeys(" + json + ")"); }
+
 private:
     PrismaUIBridge() = default;
     ~PrismaUIBridge() = default;

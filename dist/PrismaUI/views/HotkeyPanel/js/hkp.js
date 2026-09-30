@@ -164,7 +164,8 @@
             fontFamily: '',     // --Claude: '' = default EB Garamond stack
             pickMode: true,     // --Claude: open over an MCM that asks for a key (MCM key picker)
             remoteEnabled: false, // --Claude 2026-09-30: serve the panel to a tablet on the home network
-            remotePort: 8950
+            remotePort: 8950,
+            scanConfigs: true     // --Claude 2026-10-01: show mods' keys found in their config files
         },
         profiles: [{ name: 'DEFAULT', system: true }],
         activeProfile: 'DEFAULT',
@@ -176,7 +177,10 @@
         // { [source]: { key: 'KeyG', label, color, move } }; extCustom holds the user's own
         // name/colour for a source so they survive the owner re-announcing its keys.
         external: {},
-        extCustom: {}
+        extCustom: {},
+        // --Claude 2026-10-01: config-file keys the user removed from the panel ({ [source]: true });
+        // the next scan leaves them out
+        scanHidden: {}
     };
 
     const TAP_MODES = ['single', 'double', 'long'];
@@ -238,6 +242,7 @@
         const key = state.settings.toggleKey || 'F11';
         dispatchToBridge('hkpSetToggleKey', enabled + '|' + key);
         dispatchToBridge('hkpSetPickMode', state.settings.pickMode === false ? '0' : '1');
+        dispatchToBridge('hkpScanConfigs', state.settings.scanConfigs === false ? '0' : '1');
         pushRemoteToDLL();
     }
 
@@ -800,8 +805,9 @@
     function buildDefaultContextMenu(keyId) {
         const layer = currentLayerId();
         const isMod = state.modifierKeys.includes(keyId);
-        const hasExt = layer === 'default' && (extByKey[keyId] || []).length > 0;
-        const items = layer === 'default' ? buildExtItems(keyId) : [];
+        // keys found in config files never take the user's own name, so it stays editable
+        const hasExt = extOnLayer(keyId, layer).some(([s]) => !s.startsWith('SCAN:'));
+        const items = buildExtItems(keyId, layer);
         if (!hasExt) items.push({ label: 'Edit name…', action: () => startEditName(keyId, layer) });
         items.push(
             { label: isMod ? 'Unmark as modifier' : 'Mark as modifier',
@@ -814,20 +820,26 @@
 
     // --Claude hotkey hub: one block per mod that owns this key. Move Key only for owners that
     // said they take moves ("move" flag); the rest (MCM binds) get a note to rebind at the source.
-    function buildExtItems(keyId) {
+    function buildExtItems(keyId, layer) {
         const items = [];
-        const ext = extByKey[keyId] || [];
-        const owners = conflictOwners(keyId);
+        const ext = extOnLayer(keyId, layer);
+        const owners = layer === 'default' ? conflictOwners(keyId) : [];
         if (owners.length > 1) items.push({ note: true, warn: true, label: 'Conflict: ' + owners.length + ' actions on this key, remap all but one' });
         ext.forEach(([src, e]) => {
-            items.push({ head: true, label: extLabel(src, e) + '  ·  ' + ownerName(src) });
+            items.push({ head: true, label: extShownLabel(src, e) + '  ·  ' + ownerName(src) });
             if (e.move) items.push({ label: 'Move Key…', action: () => startMove(src) });
             else        items.push({ note: true, label: rebindNote(src) });
             items.push({ label: 'Rename…', action: () => startEditExtName(src) });
+            // --Claude 2026-10-01: a key that only works inside its own menu / mode is no clash
+            if (!(e.mods && e.mods.length)) {
+                items.push(countsAsConflict(src, e)
+                    ? { label: 'Only works in its own menu (not a conflict)', action: () => setConflictIgnored(src, true) }
+                    : { label: 'Count it in key conflicts', action: () => setConflictIgnored(src, false) });
+            }
             items.push({ label: 'Remove from panel', danger: true, action: () => removeExt(src) });
             items.push({ sep: true });
         });
-        const game = gameKeys[keyId];
+        const game = layer === 'default' ? gameKeys[keyId] : null;
         if (game && game.length) {
             items.push({ note: true, label: 'Skyrim: ' + game.join(', ') });
             items.push({ sep: true });
@@ -1120,6 +1132,8 @@
         document.getElementById('hkp-remote-enabled').checked = !!state.settings.remoteEnabled;
         document.getElementById('hkp-remote-port').value = Number(state.settings.remotePort) || 8950;
         syncRemoteStatus();
+        document.getElementById('hkp-scan-enabled').checked = state.settings.scanConfigs !== false;
+        syncScanStatus();
     }
     // --Claude 2026-09-30: a tablet / phone keeps its OWN label size (remote.js, stored on that
     // device), so shrinking labels to fit small keys there never changes the in-game panel.
@@ -1498,6 +1512,140 @@
             if (!e || !e.key) continue;
             (extByKey[e.key] = extByKey[e.key] || []).push([src, e]);
         }
+        // A key found in a mod's config file that the mod's MCM also announced (MCM Unlocked,
+        // after a rebind) is the same bind twice: keep the announce.
+        for (const [keyId, list] of Object.entries(extByKey)) {
+            const mcm = list.filter(([s]) => s.startsWith('MCM:')).map(([s]) => normOwner(mcmName(s)));
+            if (!mcm.length) continue;
+            extByKey[keyId] = list.filter(([s, e]) => !(s.startsWith('SCAN:') && !(e.mods && e.mods.length) &&
+                mcm.some(m => sameOwner(m, normOwner(e.owner)))));
+        }
+    }
+    function normOwner(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
+    function sameOwner(a, b) {
+        return !!a && !!b && (a === b || (a.length >= 4 && b.includes(a)) || (b.length >= 4 && a.includes(b)));
+    }
+
+    // --Claude 2026-10-01: keys found in mods' config files (HotkeyScan.cpp). One scan result
+    // replaces every SCAN: entry; entries the user removed stay out (state.scanHidden).
+    // A key held with modifiers shows on that modifier layer when the user has those keys
+    // marked as modifiers, else on the default layer as "Shift+…" (never as a conflict there).
+    const MOD_FAMILY = {
+        ShiftLeft: ['ShiftLeft', 'ShiftRight'], ShiftRight: ['ShiftLeft', 'ShiftRight'],
+        ControlLeft: ['ControlLeft', 'ControlRight'], ControlRight: ['ControlLeft', 'ControlRight'],
+        AltLeft: ['AltLeft', 'AltRight'], AltRight: ['AltLeft', 'AltRight']
+    };
+    let scanInfo = null;   // { found, shown, files, ms } of the last scan, for the Settings row
+    function setScannedHotkeys(res) {
+        let r = res;
+        try { if (typeof res === 'string') r = JSON.parse(res); } catch (_) { r = null; }
+        if (!r || !Array.isArray(r.entries)) return;
+        if (!state.external) state.external = {};
+        if (!state.scanHidden) state.scanHidden = {};
+        const old = {};
+        for (const [s, e] of Object.entries(state.external)) if (s.startsWith('SCAN:')) { old[s] = e; delete state.external[s]; }
+        let shown = 0;
+        if (state.settings.scanConfigs !== false) {
+            r.entries.forEach(en => {
+                const code = DIK_TO_CODE[en.dik];
+                if (!code || !en.src || state.scanHidden[en.src]) return;
+                const mods = (en.mods || []).map(d => DIK_TO_CODE[d]).filter(Boolean);
+                const who = shortOwner(en.owner);
+                state.external[en.src] = {
+                    key: code, label: en.label ? who + ': ' + en.label : en.owner,
+                    color: en.mcm ? 6 : 5, move: false, scan: true,
+                    owner: en.owner, where: en.where, mcm: !!en.mcm, ctx: !!en.ctx, mods
+                };
+                shown++;
+            });
+        }
+        scanInfo = { found: r.entries.length, shown, files: r.files, ms: r.ms };
+        syncScanStatus();
+        const now = {};
+        for (const [s, e] of Object.entries(state.external)) if (s.startsWith('SCAN:')) now[s] = e;
+        if (JSON.stringify(now) !== JSON.stringify(old)) { refreshAll(); save(); }
+    }
+    // Key faces are small: "PlayerEquipmentManager" -> "PEM", "True Directional Movement" -> "TDM".
+    // The full name stays in the key's menu and the conflict list.
+    function shortOwner(o) {
+        const s = String(o || '').trim();
+        if (s.length <= 12) return s;
+        const words = s.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+            .split(/[^A-Za-z0-9]+/).filter(Boolean);
+        if (words.length < 2) return s.slice(0, 12);
+        return words.map(w => (/^[A-Z0-9]+$/.test(w) && w.length <= 4) ? w : w[0].toUpperCase()).join('');
+    }
+    // The layer a mod key shows on: 'default', or its modifiers as the user's modifier keys.
+    function extLayer(e) {
+        if (!e || !e.mods || !e.mods.length) return 'default';
+        const picked = [];
+        for (const m of e.mods) {
+            const k = (MOD_FAMILY[m] || [m]).find(c => state.modifierKeys.includes(c));
+            if (!k) return 'default';
+            picked.push(k);
+        }
+        return [...new Set(picked)].sort().join('+');
+    }
+    function extOnLayer(keyId, layerId) {
+        return (extByKey[keyId] || []).filter(([, e]) => extLayer(e) === layerId);
+    }
+    // Its label, "Shift+" in front when its modifiers have no layer of their own.
+    function extShownLabel(src, e) {
+        const label = extLabel(src, e);
+        if (!e || !e.mods || !e.mods.length || extLayer(e) !== 'default') return label;
+        return e.mods.map(m => KEY_CAPTION[m] || m).join('+') + '+ ' + label;
+    }
+    // A bare key that fires anywhere: modifier combos and keys the user (or a SkyPrompt
+    // prompt) marked as menu-only are not clashes.
+    function countsAsConflict(src, e) {
+        if (!e || (e.mods && e.mods.length)) return false;
+        const c = state.extCustom && state.extCustom[src];
+        if (c && c.noConflict != null) return !c.noConflict;
+        return !e.ctx;
+    }
+    function setConflictIgnored(src, ignored) {
+        const e = state.external[src];
+        const c = customFor(src, true);
+        if (!!(e && e.ctx) === ignored) delete c.noConflict; else c.noConflict = ignored;
+        if (!Object.keys(c).length) delete state.extCustom[src];
+        refreshAll(); save();
+    }
+
+    // Settings row: "Mod keys from config files"
+    function setScanConfigs(val) {
+        state.settings.scanConfigs = !!val;
+        dispatchToBridge('hkpScanConfigs', val ? '1' : '0');
+        if (!val) {
+            for (const s of Object.keys(state.external || {})) if (s.startsWith('SCAN:')) delete state.external[s];
+            scanInfo = null;
+            refreshAll();
+        }
+        syncScanStatus();
+        save();
+    }
+    function rescanConfigs() {
+        const el = document.getElementById('hkp-scan-status');
+        if (el) el.textContent = 'Scanning…';
+        dispatchToBridge('hkpScanConfigs', 'rescan');
+    }
+    function restoreScanHidden() {
+        state.scanHidden = {};
+        save();
+        rescanConfigs();
+    }
+    function syncScanStatus() {
+        const el = document.getElementById('hkp-scan-status');
+        if (!el) return;
+        const hidden = Object.keys(state.scanHidden || {}).length;
+        const restore = document.getElementById('hkp-scan-restore');
+        if (restore) {
+            restore.classList.toggle('hkp-hidden', !hidden);
+            restore.textContent = 'Restore removed (' + hidden + ')';
+        }
+        if (state.settings.scanConfigs === false) { el.textContent = 'Off.'; return; }
+        if (!scanInfo) { el.textContent = REMOTE ? 'Scanned by the game.' : 'Not scanned yet.'; return; }
+        el.textContent = scanInfo.shown + ' keys from ' + scanInfo.files + ' files (' + scanInfo.ms + ' ms)' +
+            (scanInfo.found > scanInfo.shown ? ', ' + (scanInfo.found - scanInfo.shown) + ' hidden or not on the panel' : '') + '.';
     }
     // The user's name/colour for a source; created on demand when `create`.
     function customFor(src, create) {
@@ -1516,10 +1664,13 @@
     // What a key shows in a layer: its mods' keys on the default layer, else the panel label.
     function viewLayer(keyId, layerId) {
         const own = getKeyLayer(keyId, layerId);
-        const ext = layerId === 'default' ? extByKey[keyId] : null;
-        if (!ext || !ext.length) return own;
+        let ext = extOnLayer(keyId, layerId);
+        // --Claude 2026-10-01: the user's own name beats keys found in config files (those
+        // still count in conflicts and list in the key's menu); announced keys replace it as before.
+        if (own && own.label) ext = ext.filter(([s]) => !s.startsWith('SCAN:'));
+        if (!ext.length) return own;
         return {
-            label: ext.map(([s, e]) => extLabel(s, e)).join(' / '),
+            label: ext.map(([s, e]) => extShownLabel(s, e)).join(' / '),
             color: extColor(ext[0][0], ext[0][1]),
             profiles: own && own.profiles,
             profileColors: own && own.profileColors
@@ -1532,17 +1683,27 @@
     }
     function ownerName(src) {
         if (src.startsWith('MCM:')) return mcmName(src) + ' MCM';
+        if (src.startsWith('SCAN:')) {
+            const e = state.external[src];
+            return e ? (e.mcm && !/ MCM$/.test(e.owner) ? e.owner + ' MCM' : e.owner) : 'config file';
+        }
         const i = src.indexOf(':');
         return i > 0 ? src.slice(0, i) : src;
     }
     function rebindNote(src) {
+        if (src.startsWith('SCAN:')) {
+            const e = state.external[src];
+            if (e && e.mcm) return 'Rebind in ' + ownerName(src);
+            return 'Set in ' + (e ? e.where : 'its config file');
+        }
         return src.startsWith('MCM:') ? 'Rebind in ' + mcmName(src) + ' MCM' : 'Rebind in ' + ownerName(src);
     }
     // Everything that fires on this bare key: mod keys, vanilla controls (from the live control
     // map, so the user's controlmap.txt edits count), and the panel's own toggle key. Two or
     // more = a real clash that needs remapping; shown as a red ! with this list on hover.
     function conflictOwners(keyId) {
-        const out = (extByKey[keyId] || []).map(([s, e]) => extLabel(s, e) + '  (' + ownerName(s) + ')');
+        const out = (extByKey[keyId] || []).filter(([s, e]) => countsAsConflict(s, e))
+            .map(([s, e]) => extLabel(s, e) + '  (' + ownerName(s) + ')');
         (gameKeys[keyId] || []).forEach(ev => out.push(ev + '  (Skyrim control)'));
         if (isReservedKey(keyId)) out.push('Open Hotkey Panel  (Hotkey Panel)');
         return out;
@@ -1586,6 +1747,8 @@
     function removeExt(src) {
         delete state.external[src];
         if (state.extCustom) delete state.extCustom[src];
+        // a config-file key would come back with the next scan
+        if (src.startsWith('SCAN:')) { if (!state.scanHidden) state.scanHidden = {}; state.scanHidden[src] = true; syncScanStatus(); }
         refreshAll(); save();
     }
     function flashStatus(msg, ms) {
@@ -1761,7 +1924,7 @@
     // Public API
     // ---------------------------------------------------------------
     window.HKP = {
-        setExternalHotkey, setGameKeys,
+        setExternalHotkey, setGameKeys, setScannedHotkeys, setScanConfigs, rescanConfigs, restoreScanHidden,
         startPick, endPick, setPickMode,
         confirmPick: () => confirmPick(),
         cancelPick: () => closePickModal(),
@@ -1778,6 +1941,7 @@
                 if (!state.activeTapMode) state.activeTapMode = 'single';
                 if (!state.external || typeof state.external !== 'object') state.external = {};
                 if (!state.extCustom || typeof state.extCustom !== 'object') state.extCustom = {};
+                if (!state.scanHidden || typeof state.scanHidden !== 'object') state.scanHidden = {};
                 // b66da8c wrote mod keys into the key's own default layer, tagged `source`;
                 // move them into the registry (the owner adds the move flag on its next announce).
                 for (const [keyId, k] of Object.entries(state.keys || {})) {
