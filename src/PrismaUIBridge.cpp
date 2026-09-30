@@ -149,11 +149,16 @@ namespace {
             Scheduler::Get().After(80ms, [gen, attempt]() { VerifyCleanup(gen, attempt + 1, true); });
             return;
         }
-        if (needsPulse || ownFocus || focusMenu || cursorStuck) {
+        // --Claude 2026-10-01 (user: "on every close the console pops open for a second"): the
+        // pulse also fired when focus was merely slow to let go at the 90 ms check and everything
+        // was clean by now - that was every "focus was stale at close" pulse in the log. Pulse
+        // only for something still stuck at THIS check.
+        if (ownFocus || focusMenu || cursorStuck) {
             ConsolePulse(gen, cursorStuck ? "Cursor Menu still open after close"
                             : ownFocus    ? "panel still focused"
-                            : focusMenu   ? "PrismaUI FocusMenu still open"
-                                          : "focus was stale at close");
+                                          : "PrismaUI FocusMenu still open");
+        } else if (needsPulse) {
+            SKSE::log::info("HKPFocusRecovery: focus was slow to release at close, clean now - no console pulse");
         }
     }
 
@@ -383,11 +388,14 @@ static void TriggerPanelKey(const std::string& payload, const char* from) {
 
     auto* task = SKSE::GetTaskInterface();
     if (!task) return;
-    task->AddTask([mods, code, tap]() {
-        if (g_bridge && g_bridge->IsVisible()) {
+    const bool remote = std::string_view(from) == "Remote";
+    task->AddTask([mods, code, tap, remote]() {
+        const bool wasVisible = g_bridge && g_bridge->IsVisible();
+        if (wasVisible) {
             g_bridge->HideUI();
         }
-        KeyPress::Fire(mods, code, tap);
+        // --Claude 2026-10-01: a tablet press with the panel shut goes to whatever menu is open
+        KeyPress::Fire(mods, code, tap, wasVisible || !remote);
     });
 }
 
