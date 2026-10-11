@@ -24,7 +24,8 @@ public:
     // Update the global toggle key + enabled flag. Called from PrismaUIBridge
     // whenever the JS dispatches hkpSetToggleKey, and once on UI load so the
     // DLL learns the user's persisted key.
-    void SetToggleKey(std::uint32_t dxScanCode, bool enabled);
+    // a_shift: the key name had a "Shift+" prefix, so the toggle needs Shift held.
+    void SetToggleKey(std::uint32_t dxScanCode, bool enabled, bool a_shift = false);
     std::uint32_t GetToggleKey() const { return m_toggleEnabled.load() ? m_toggleKey.load() : 0; }
 
     // Map a UI keyname string ("F11", "KeyQ", "Numpad5", ...) to a Skyrim
@@ -56,6 +57,11 @@ private:
     // injected ButtonEvent and the GKeyDown event don't both toggle.
     static bool IsGKey(std::uint32_t code) { return (code >= 100 && code <= 110) || code == 118; }
 
+    // --Claude 2026-10-12: a "Shift+" toggle (the user's Shift+G6) only fires with Shift held,
+    // which leaves the bare key to another mod (G6 = FollowerUI).
+    bool ToggleModifierOk() const;
+
     std::atomic<std::uint32_t> m_toggleKey{ 87 };   // F11 default
     std::atomic<bool> m_toggleEnabled{ true };
+    std::atomic<bool> m_toggleShift{ false };
 };

@@ -552,9 +552,12 @@ void PrismaUIBridge::RegisterJSListeners() {
         auto pipe = s.find('|');
         if (pipe == std::string::npos) return;
         const bool enabled = (s.substr(0, pipe) == "1");
-        const std::string keyName = s.substr(pipe + 1);
+        std::string keyName = s.substr(pipe + 1);
+        // --Claude 2026-10-12: "Shift+F24" = the toggle needs Shift held
+        const bool shift = keyName.rfind("Shift+", 0) == 0;
+        if (shift) keyName.erase(0, 6);
         const auto code = InputHandler::KeyNameToDXScanCode(keyName);
-        InputHandler::GetSingleton()->SetToggleKey(code, enabled);
+        InputHandler::GetSingleton()->SetToggleKey(code, enabled, shift);
     });
 
     // JS → DLL: pause-on-show preference. No UI for this yet but kept for

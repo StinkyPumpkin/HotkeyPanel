@@ -39,6 +39,7 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
     if (!m_toggleEnabled.load()) return RE::BSEventNotifyControl::kContinue;
     const auto dik = static_cast<std::uint32_t>(e->numArg + 0.5f);
     if (dik != m_toggleKey.load()) return RE::BSEventNotifyControl::kContinue;
+    if (!ToggleModifierOk()) return RE::BSEventNotifyControl::kContinue;
 
     auto* bridge = PrismaUIBridge::GetSingleton();
     if (!bridge) return RE::BSEventNotifyControl::kContinue;
@@ -55,13 +56,18 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
     return RE::BSEventNotifyControl::kContinue;
 }
 
-void InputHandler::SetToggleKey(std::uint32_t dxScanCode, bool enabled) {
+void InputHandler::SetToggleKey(std::uint32_t dxScanCode, bool enabled, bool a_shift) {
     if (dxScanCode != 0) m_toggleKey.store(dxScanCode);
     m_toggleEnabled.store(enabled);
+    m_toggleShift.store(a_shift);
     // --Claude: keep the toggle key away from SKSE Menu Framework mods waiting for a key
     PickMode::SmfReserveKey(enabled ? m_toggleKey.load() : 0);
-    SKSE::log::info("InputHandler: toggle key set to {} (enabled={})",
-                    m_toggleKey.load(), enabled);
+    SKSE::log::info("InputHandler: toggle key set to {}{} (enabled={})",
+                    a_shift ? "Shift+" : "", m_toggleKey.load(), enabled);
+}
+
+bool InputHandler::ToggleModifierOk() const {
+    return !m_toggleShift.load() || (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
 }
 
 bool InputHandler::IsBlockingMenuOpen() {
@@ -124,7 +130,7 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
             // --Claude 2026-09-28: the panel's own key is never picked (a second F24 press 0.5 s after
             // opening got sent to an SMF page as its new key). It closes the panel - except in the
             // first second of a picker; G-key toggles close through the G-Key Service sink.
-            if (code == toggleCode) {
+            if (code == toggleCode && ToggleModifierOk()) {
                 if (!IsGKey(toggleCode) && !bridge->PickJustOpened()) bridge->HideUI();
                 break;
             }
@@ -159,7 +165,7 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
         const auto toggle = m_toggleKey.load();
         for (auto* evt = *a_event; evt; evt = evt->next) {
             auto* button = evt->AsButtonEvent();
-            if (!button || button->device.get() != RE::INPUT_DEVICE::kKeyboard || button->GetIDCode() != toggle) continue;
+            if (!button || button->device.get() != RE::INPUT_DEVICE::kKeyboard || button->GetIDCode() != toggle || !ToggleModifierOk()) continue;
             if (button->IsDown() && !IsGKey(toggle)) PickMode::OpenForWaitingMcm();
             return RE::BSEventNotifyControl::kStop;
         }
@@ -171,7 +177,7 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
         auto* button = evt->AsButtonEvent();
         if (!button || !button->IsDown()) continue;
         if (button->device.get() != RE::INPUT_DEVICE::kKeyboard) continue;
-        if (button->GetIDCode() == wantKey && !IsGKey(wantKey)) {  // G-keys handled by the service sink
+        if (button->GetIDCode() == wantKey && !IsGKey(wantKey) && ToggleModifierOk()) {  // G-keys handled by the service sink
             if (PickMode::SmfWindowOpen() && PickMode::SmfPickAvailable()) {
                 SKSE::log::info("InputHandler: toggle key {} pressed over an SKSE menu -> key picker", wantKey);
                 bridge->ShowManualPick();
