@@ -1380,6 +1380,8 @@
                         if (/^F(1[3-9]|2[0-4])$/.test(e.key)) code = e.key;
                         else if (e.keyCode >= 124 && e.keyCode <= 135) code = 'F' + (e.keyCode - 111);
                     }
+                    // --Claude 2026-10-12: Shift held = a "Shift+" toggle; the bare key stays free
+                    if (code && e.shiftKey && !/^Shift(Left|Right)$/.test(code)) code = 'Shift+' + code;
                     if (code) applyBoundToggle(code);
                 }
                 bindingToggleKey = false;
