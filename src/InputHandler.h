@@ -26,7 +26,9 @@ public:
     // DLL learns the user's persisted key.
     // a_shift: the key name had a "Shift+" prefix, so the toggle needs Shift held.
     void SetToggleKey(std::uint32_t dxScanCode, bool enabled, bool a_shift = false);
-    std::uint32_t GetToggleKey() const { return m_toggleEnabled.load() ? m_toggleKey.load() : 0; }
+    std::uint32_t GetToggleKey() const { return m_toggleEnabled.load() && !m_externalOff.load() ? m_toggleKey.load() : 0; }
+    // --Claude 11-11: Bye Sky UI's radial Tween opens the panel and frees its key (HotkeyPanel_SetHotkeyEnabled)
+    void SetExternalOff(bool a_off) { m_externalOff.store(a_off); }
 
     // Map a UI keyname string ("F11", "KeyQ", "Numpad5", ...) to a Skyrim
     // DXScanCode. Returns 0 for unknown.
@@ -63,5 +65,6 @@ private:
 
     std::atomic<std::uint32_t> m_toggleKey{ 87 };   // F11 default
     std::atomic<bool> m_toggleEnabled{ true };
+    std::atomic<bool> m_externalOff{ false };   // --Claude 11-11: another mod opens the panel (its key is freed)
     std::atomic<bool> m_toggleShift{ false };
 };

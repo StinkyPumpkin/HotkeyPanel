@@ -54,3 +54,19 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse) {
     SKSE::log::info("HotkeyPanelPrisma loaded successfully! (no ESP, pure SKSE)");
     return true;
 }
+
+// --Claude 11-11: Bye Sky UI's radial Tween opens the panel from its Mods fan and frees the panel's toggle key
+extern "C" __declspec(dllexport) void HotkeyPanel_Toggle()
+{
+    SKSE::GetTaskInterface()->AddTask([] {
+        auto* b = PrismaUIBridge::GetSingleton();
+        if (!b || !b->IsReady()) return;
+        if (b->IsVisible()) b->HideUI();
+        else b->ShowUI();
+    });
+}
+extern "C" __declspec(dllexport) void HotkeyPanel_SetHotkeyEnabled(bool a_on)
+{
+    if (auto* h = InputHandler::GetSingleton()) h->SetExternalOff(!a_on);
+    SKSE::log::info("HotkeyPanel_SetHotkeyEnabled({}) - another mod {}", a_on, a_on ? "gave the toggle key back" : "opens the panel now");
+}
