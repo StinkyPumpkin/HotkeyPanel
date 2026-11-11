@@ -36,7 +36,7 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
         return RE::BSEventNotifyControl::kContinue;
     }
     if (e->eventName != "GKeyDown") return RE::BSEventNotifyControl::kContinue;
-    if (!m_toggleEnabled.load()) return RE::BSEventNotifyControl::kContinue;
+    if (!m_toggleEnabled.load() || m_externalOff.load()) return RE::BSEventNotifyControl::kContinue;
     const auto dik = static_cast<std::uint32_t>(e->numArg + 0.5f);
     if (dik != m_toggleKey.load()) return RE::BSEventNotifyControl::kContinue;
     if (!ToggleModifierOk()) return RE::BSEventNotifyControl::kContinue;
@@ -156,7 +156,7 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
     // Panel HIDDEN: watch for toggle key.
     // ----------------------------------------------------------------
     if (PickMode::IsInjecting()) return RE::BSEventNotifyControl::kContinue;  // our key for the MCM, not a toggle
-    if (!m_toggleEnabled.load()) return RE::BSEventNotifyControl::kContinue;
+    if (!m_toggleEnabled.load() || m_externalOff.load()) return RE::BSEventNotifyControl::kContinue;
 
     // --Claude 2026-09-28: the toggle key while an MCM waits for a key must not reach SKSE's remap
     // handler (the sink after ours) - that would bind it. Swallow it and open the picker instead
