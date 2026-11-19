@@ -644,6 +644,7 @@
         }
         const sr = stage.getBoundingClientRect(), pr = pic.getBoundingClientRect();
         const k = Math.min(pr.width / 120, pr.height / 200);
+        const midBox = stage.querySelector('.hkp-m-mid .hkp-m-input'), mid = midBox && midBox.getBoundingClientRect();
         const ox = pr.left - sr.left + (pr.width - 120 * k) / 2, oy = pr.top - sr.top + (pr.height - 200 * k) / 2;
         let h = '';
         for (const [id, [ax, ay]] of Object.entries(MOUSE_ANCHOR)) {
@@ -658,8 +659,20 @@
             } else {
                 const left = b.left + b.width / 2 < pr.left + pr.width / 2;
                 const bx = left ? b.right - sr.left : b.left - sr.left, by = b.top - sr.top + b.height / 2;
-                const kx = bx + (left ? 10 : -10);
-                pts = bx + ',' + by + ' ' + kx + ',' + by + ' ' + px + ',' + py;
+                if ((id === 'Mouse1' || id === 'Mouse2') && mid) {
+                    // route: out of the box, under the Middle Click box, then down to the button
+                    const kx = left ? mid.left - sr.left + 12 : mid.right - sr.left - 12, ky = mid.bottom - sr.top + 16;
+                    pts = bx + ',' + by + ' ' + kx + ',' + ky + ' ' + px + ',' + py;
+                } else if (id === 'MouseSideLeft2' || id === 'MouseSideRight2') {
+                    // the front side button: straight up (or down) beside the body, then across into the button,
+                    // so its line never runs over the back button below it
+                    const edge = left ? ox + 4 * k - 5 : ox + 116 * k + 5;
+                    const kx = left ? Math.min(bx + 15, edge) : Math.max(bx - 15, edge);
+                    pts = bx + ',' + by + ' ' + kx + ',' + by + ' ' + kx + ',' + py + ' ' + px + ',' + py;
+                } else {
+                    const kx = bx + (left ? 10 : -10);
+                    pts = bx + ',' + by + ' ' + kx + ',' + by + ' ' + px + ',' + py;
+                }
             }
             h += '<polyline class="hkp-ml" data-ml="' + id + '" points="' + pts + '"/>' +
                  '<circle class="hkp-ml-dot" data-ml="' + id + '" cx="' + px + '" cy="' + py + '" r="' + Math.max(2.5, 2.2 * k) + '"/>';
