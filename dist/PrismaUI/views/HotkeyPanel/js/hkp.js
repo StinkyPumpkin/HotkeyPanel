@@ -108,15 +108,15 @@
     const MOUSE = [
         ['Mouse1',           'Left Click',     12.9, 19.0],
         ['MouseTiltLeft',    'Tilt Left',      11.5, 33.0],
-        ['MouseSideLeft1',   'Side L1',        10.5, 47.0],
-        ['MouseSideLeft2',   'Side L2',        10.5, 61.0],
-        ['MouseSideLeft3',   'Side L3',        10.5, 75.0],
+        ['MouseSideLeft1',   'Top left',       10.5, 47.0],   // --Claude 2026-11-20: names say where the button is
+        ['MouseSideLeft2',   'Left side front', 10.5, 61.0],
+        ['MouseSideLeft3',   'Left side back', 10.5, 75.0],
         ['Mouse3',           'Middle Click',   50.8,  8.0],
         ['Mouse2',           'Right Click',    86.0, 19.0],
         ['MouseTiltRight',   'Tilt Right',     88.5, 33.0],
-        ['MouseSideRight1',  'Side R1',        89.5, 47.0],
-        ['MouseSideRight2',  'Side R2',        89.5, 61.0],
-        ['MouseSideRight3',  'Side R3',        89.5, 75.0]
+        ['MouseSideRight1',  'Top right',      89.5, 47.0],
+        ['MouseSideRight2',  'Right side front', 89.5, 61.0],
+        ['MouseSideRight3',  'Right side back', 89.5, 75.0]
     ];
 
     const KEY_CAPTION = {};
@@ -289,6 +289,7 @@
         }
         document.documentElement.style.setProperty('--hkp-key-h', keyH + 'px');
         refitAll();
+        drawMouseLines();
         drawGroupOutline();
     }
 
@@ -414,6 +415,7 @@
     function litMouseZone(keyId, on) {
         const z = document.querySelector('.hkp-mouse-svg [data-mz="' + keyId + '"]');
         if (z) z.classList.toggle('hkp-lit', on);
+        document.querySelectorAll('#hkp-mouse-lines [data-ml="' + keyId + '"]').forEach(l => l.classList.toggle('hkp-lit', on));
     }
     function colourChip(idx) {
         const p = PALETTE[idx];
@@ -602,22 +604,68 @@
     // boxes; the pointed-at box lights its button on the drawing, and bound buttons take their colour.
     const MOUSE_LEFT  = ['Mouse1', 'MouseTiltLeft', 'MouseSideLeft1', 'MouseSideLeft2', 'MouseSideLeft3'];
     const MOUSE_RIGHT = ['Mouse2', 'MouseTiltRight', 'MouseSideRight1', 'MouseSideRight2', 'MouseSideRight3'];
+    // --Claude 2026-11-20: laid out like the old picture's mouse: two buttons on top behind the wheel
+    // (the third box each side) and two thumb/side buttons per flank (the last two boxes). MOUSE_ANCHOR = where
+    // each box's line ends on the drawing (viewBox units).
     const MOUSE_SVG =
         '<svg class="hkp-mouse-svg" viewBox="0 0 120 200" preserveAspectRatio="xMidYMid meet">' +
         '<path class="hkp-m-body" d="M60 4 C30 4 13 24 11 60 L9 130 C9 174 31 196 60 196 C89 196 111 174 111 130 L109 60 C107 24 90 4 60 4 Z"/>' +
-        '<path class="hkp-mz" data-mz="Mouse1" d="M58 7 C32 8 15.5 26 13.5 60 L12.7 84 Q36 91 58 92 Z"/>' +
-        '<path class="hkp-mz" data-mz="Mouse2" d="M62 7 C88 8 104.5 26 106.5 60 L107.3 84 Q84 91 62 92 Z"/>' +
-        '<rect class="hkp-mz" data-mz="Mouse3" x="53.5" y="22" width="13" height="32" rx="6.5"/>' +
-        '<path class="hkp-m-ridge" d="M56.5 29 H63.5 M56.5 34 H63.5 M56.5 39 H63.5 M56.5 44 H63.5 M56.5 49 H63.5"/>' +
-        '<path class="hkp-mz" data-mz="MouseTiltLeft" d="M49 31 L43 38 L49 45 Z"/>' +
-        '<path class="hkp-mz" data-mz="MouseTiltRight" d="M71 31 L77 38 L71 45 Z"/>' +
-        '<rect class="hkp-mz" data-mz="MouseSideLeft1" x="4" y="100" width="9" height="17" rx="3"/>' +
-        '<rect class="hkp-mz" data-mz="MouseSideLeft2" x="4" y="121" width="9" height="17" rx="3"/>' +
-        '<rect class="hkp-mz" data-mz="MouseSideLeft3" x="4" y="142" width="9" height="17" rx="3"/>' +
-        '<rect class="hkp-mz" data-mz="MouseSideRight1" x="107" y="100" width="9" height="17" rx="3"/>' +
-        '<rect class="hkp-mz" data-mz="MouseSideRight2" x="107" y="121" width="9" height="17" rx="3"/>' +
-        '<rect class="hkp-mz" data-mz="MouseSideRight3" x="107" y="142" width="9" height="17" rx="3"/>' +
+        '<path class="hkp-mz" data-mz="Mouse1" d="M46 8.5 C28 10.5 15.5 27 13.5 60 L12.7 86 Q28 92 46 93 Z"/>' +
+        '<path class="hkp-mz" data-mz="Mouse2" d="M74 8.5 C92 10.5 104.5 27 106.5 60 L107.3 86 Q92 92 74 93 Z"/>' +
+        '<path class="hkp-m-spine" d="M48 12 H72 V90 Q60 94 48 90 Z"/>' +
+        '<rect class="hkp-mz" data-mz="Mouse3" x="54" y="20" width="12" height="32" rx="6"/>' +
+        '<path class="hkp-m-ridge" d="M56.5 27 H63.5 M56.5 32 H63.5 M56.5 37 H63.5 M56.5 42 H63.5 M56.5 47 H63.5"/>' +
+        '<path class="hkp-mz" data-mz="MouseTiltLeft" d="M52.5 30 L49 36 L52.5 42 Z"/>' +
+        '<path class="hkp-mz" data-mz="MouseTiltRight" d="M67.5 30 L71 36 L67.5 42 Z"/>' +
+        '<rect class="hkp-mz" data-mz="MouseSideLeft1" x="50" y="62" width="8.5" height="13" rx="2.5"/>' +
+        '<rect class="hkp-mz" data-mz="MouseSideRight1" x="61.5" y="62" width="8.5" height="13" rx="2.5"/>' +
+        '<rect class="hkp-mz" data-mz="MouseSideLeft2" x="4" y="92" width="9" height="18" rx="3"/>' +
+        '<rect class="hkp-mz" data-mz="MouseSideLeft3" x="4.5" y="116" width="9" height="18" rx="3"/>' +
+        '<rect class="hkp-mz" data-mz="MouseSideRight2" x="107" y="92" width="9" height="18" rx="3"/>' +
+        '<rect class="hkp-mz" data-mz="MouseSideRight3" x="106.5" y="116" width="9" height="18" rx="3"/>' +
         '</svg>';
+    const MOUSE_ANCHOR = {
+        Mouse1: [30, 48], Mouse2: [90, 48], Mouse3: [60, 22],
+        MouseTiltLeft: [51, 36], MouseTiltRight: [69, 36],
+        MouseSideLeft1: [54.25, 68.5], MouseSideRight1: [65.75, 68.5],
+        MouseSideLeft2: [8.5, 101], MouseSideLeft3: [9, 125],
+        MouseSideRight2: [111.5, 101], MouseSideRight3: [111, 125]
+    };
+    // A line from each box to its button, ending in a dot (as the old picture had).
+    function drawMouseLines() {
+        const stage = document.getElementById('hkp-mouse-stage');
+        const pic = stage && stage.querySelector('.hkp-mouse-svg');
+        if (!pic || REMOTE || !stage.offsetWidth) return;
+        let svg = document.getElementById('hkp-mouse-lines');
+        if (!svg) {
+            svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.id = 'hkp-mouse-lines';
+            stage.appendChild(svg);
+        }
+        const sr = stage.getBoundingClientRect(), pr = pic.getBoundingClientRect();
+        const k = Math.min(pr.width / 120, pr.height / 200);
+        const ox = pr.left - sr.left + (pr.width - 120 * k) / 2, oy = pr.top - sr.top + (pr.height - 200 * k) / 2;
+        let h = '';
+        for (const [id, [ax, ay]] of Object.entries(MOUSE_ANCHOR)) {
+            const box = stage.querySelector('.hkp-m-input[data-key-id="' + id + '"]');
+            if (!box) continue;
+            const b = box.getBoundingClientRect();
+            const px = ox + ax * k, py = oy + ay * k;
+            let pts;
+            if (id === 'Mouse3') {
+                const bx = b.left - sr.left + b.width / 2, by = b.bottom - sr.top;
+                pts = bx + ',' + by + ' ' + px + ',' + py;
+            } else {
+                const left = b.left + b.width / 2 < pr.left + pr.width / 2;
+                const bx = left ? b.right - sr.left : b.left - sr.left, by = b.top - sr.top + b.height / 2;
+                const kx = bx + (left ? 10 : -10);
+                pts = bx + ',' + by + ' ' + kx + ',' + by + ' ' + px + ',' + py;
+            }
+            h += '<polyline class="hkp-ml" data-ml="' + id + '" points="' + pts + '"/>' +
+                 '<circle class="hkp-ml-dot" data-ml="' + id + '" cx="' + px + '" cy="' + py + '" r="' + Math.max(2.5, 2.2 * k) + '"/>';
+        }
+        svg.innerHTML = h;
+    }
     function renderMouse() {
         const stage = document.getElementById('hkp-mouse-stage');
         stage.innerHTML = '';

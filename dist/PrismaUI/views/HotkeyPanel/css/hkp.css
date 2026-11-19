@@ -1059,3 +1059,13 @@ body.hkp-color-dot .hkp-key.hkp-dim, body.hkp-color-dot .hkp-m-input.hkp-dim { b
 .hkp-info-row { white-space: normal; align-items: flex-start; }
 .hkp-info-row .hkp-info-bang, .hkp-info-row .hkp-info-dot { margin-top: 3px; }
 .hkp-info-row .hkp-info-dot { margin-top: 7px; }
+
+/* --Claude 2026-11-20: lines from the mouse boxes to their buttons; the drawing's centre strip */
+.hkp-mouse-stage { position: relative; }
+#hkp-mouse-lines { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; z-index: 1; }
+.hkp-ml { fill: none; stroke: rgba(201, 170, 110, 0.55); stroke-width: 1.2; }
+.hkp-ml-dot { fill: #c9a45c; stroke: rgba(6, 5, 4, 0.9); stroke-width: 1; }
+.hkp-ml.hkp-lit { stroke: #f0d697; stroke-width: 2; }
+.hkp-ml-dot.hkp-lit { fill: #f0d697; }
+.hkp-m-input { z-index: 2; }
+.hkp-m-spine { fill: rgba(10, 9, 7, 0.6); stroke: rgba(201, 170, 110, 0.3); stroke-width: 0.8; pointer-events: none; }
