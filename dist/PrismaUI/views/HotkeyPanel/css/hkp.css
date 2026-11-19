@@ -1005,3 +1005,36 @@ body.hkp-tap-long #hkp-root   { background: rgba(32, 28, 10, 0.93); border-color
 .hkp-setting-hint { font-size: 12px; font-style: normal; line-height: 1.4; color: var(--hkp-text-dim); }
 .hkp-font-item { font-family: var(--hkp-ui-font); font-size: 14px; }
 .hkp-tooltip { border-radius: 4px; }
+
+/* --Claude 2026-11-20: Key colours = Dot. Keys stay plain; the colour is a dot in the top-right corner
+   (the conflict mark moves left of it). */
+.hkp-dot {
+    display: none; position: absolute; top: 3px; right: 3px; width: 12px; height: 12px; border-radius: 50%;
+    border: 1px solid rgba(0, 0, 0, 0.75); box-shadow: 0 0 0 1px rgba(236, 228, 210, 0.22);
+    pointer-events: none; z-index: 2;
+}
+body.hkp-color-dot .hkp-key:not([data-color="0"]) .hkp-dot,
+body.hkp-color-dot .hkp-m-input:not([data-color="0"]) .hkp-dot { display: block; }
+body.hkp-color-dot .hkp-key:not([data-color="0"]) .hkp-conflict-badge,
+body.hkp-color-dot .hkp-m-input:not([data-color="0"]) .hkp-conflict-badge { right: 18px; }
+body.hkp-color-dot .hkp-key[data-color], body.hkp-color-dot .hkp-m-input[data-color] {
+    background: #1e1b16; color: var(--hkp-text); --kbg: #1e1b16 !important;
+}
+body.hkp-color-dot .hkp-key[data-color]:hover, body.hkp-color-dot .hkp-m-input[data-color]:hover,
+body.hkp-color-dot .hkp-m-input[data-color].hkp-m-hot { background: #2f2a22; --kbg: #2f2a22 !important; }
+body.hkp-color-dot .hkp-key[data-lum="light"] .hkp-key-cap,
+body.hkp-color-dot .hkp-m-input[data-lum="light"] .hkp-key-cap { color: rgba(236, 228, 210, 0.78); text-shadow: 0 1px 1px rgba(0, 0, 0, 0.6); }
+body.hkp-color-dot .hkp-m-input[data-lum="light"] .hkp-m-label { color: var(--hkp-text); }
+body.hkp-color-dot .hkp-key.hkp-dim, body.hkp-color-dot .hkp-m-input.hkp-dim { background: #17140f !important; }
+.hkp-seg { gap: 0; }
+.hkp-seg .hkp-btn { border-radius: 0; min-width: 56px; }
+.hkp-seg .hkp-btn:first-child { border-radius: 6px 0 0 6px; }
+.hkp-seg .hkp-btn:last-child { border-radius: 0 6px 6px 0; border-left: 0; }
+.hkp-seg .hkp-btn.hkp-on { background: rgba(201, 164, 92, 0.14); border-color: var(--hkp-gold); color: var(--hkp-gold-hi); }
+.hkp-settings-panel { background: rgb(15, 13, 10); }
+.hkp-settings-header .hkp-close-btn {
+    width: 28px; height: 28px; border-radius: 6px; background: #1e1b16; border: 1px solid var(--hkp-border);
+    color: var(--hkp-text-dim); font: 18px/1 var(--hkp-ui-font); cursor: pointer;
+}
+.hkp-settings-header .hkp-close-btn:hover { color: var(--hkp-text); border-color: var(--hkp-border-hi); background: #2f2a22; }
+.hkp-settings-panel input[type="range"] { accent-color: var(--hkp-gold); }

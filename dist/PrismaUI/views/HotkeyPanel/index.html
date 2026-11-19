@@ -180,6 +180,16 @@
                     <div class="hkp-font-list hkp-hidden" id="hkp-font-list"></div>
                 </div>
             </div>
+            <div class="hkp-setting-row" id="hkp-row-colorstyle">
+                <div class="hkp-setting-label">
+                    Key colours
+                    <div class="hkp-setting-hint">Fill: the whole key takes its colour. Dot: keys stay plain and show their colour as a dot in the corner (more even, and leaves room for icons).</div>
+                </div>
+                <div class="hkp-setting-control hkp-seg">
+                    <button class="hkp-btn" id="hkp-cs-fill" onclick="HKP.setColorStyle('fill')">Fill</button>
+                    <button class="hkp-btn" id="hkp-cs-dot" onclick="HKP.setColorStyle('dot')">Dot</button>
+                </div>
+            </div>
             <div class="hkp-setting-row" id="hkp-row-labelsize">
                 <div class="hkp-setting-label">
                     Label font size

@@ -165,7 +165,8 @@
             pickMode: true,     // --Claude: open over an MCM that asks for a key (MCM key picker)
             remoteEnabled: false, // --Claude 2026-09-30: serve the panel to a tablet on the home network
             remotePort: 8950,
-            scanConfigs: true     // --Claude 2026-10-01: show mods' keys found in their config files
+            scanConfigs: true,    // --Claude 2026-10-01: show mods' keys found in their config files
+            colorStyle: 'fill'    // --Claude 2026-11-20: 'fill' = the key takes its colour, 'dot' = a coloured dot on a plain key
         },
         profiles: [{ name: 'DEFAULT', system: true }],
         activeProfile: 'DEFAULT',
@@ -333,9 +334,9 @@
         const cols = el._stackCols || [];
         el.classList.toggle('hkp-stacked', cols.length > 0);
         if (!cols.length) { el.style.removeProperty('--st'); el.style.boxShadow = ''; return; }
-        const s = stackStep, sh = [];
+        const s = stackStep, sh = [], dotMode = document.body.classList.contains('hkp-color-dot');
         cols.forEach((c, i) => {
-            const d = s * (i + 1), fill = (PALETTE[c] && PALETTE[c].hex) || '#3b3428';
+            const d = s * (i + 1), fill = (!dotMode && PALETTE[c] && PALETTE[c].hex) || '#3b3428';
             sh.push(d + 'px ' + d + 'px 0 -1px ' + fill, d + 'px ' + d + 'px 0 0 rgba(6,5,4,.95)');
         });
         el.style.setProperty('--st', (s * cols.length) + 'px');
@@ -512,6 +513,9 @@
         cap.className = 'hkp-key-cap';
         cap.textContent = caption;
         el.appendChild(cap);
+        const dot = document.createElement('div');
+        dot.className = 'hkp-dot';
+        el.appendChild(dot);
         const lbl = document.createElement('div');
         lbl.className = 'hkp-key-label hkp-empty';
         el.appendChild(lbl);
@@ -636,6 +640,9 @@
         cap.className = 'hkp-key-cap';
         cap.textContent = placeholder || keyId;
         el.appendChild(cap);
+        const dot = document.createElement('div');
+        dot.className = 'hkp-dot';
+        el.appendChild(dot);
 
         const lbl = document.createElement('div');
         lbl.className = 'hkp-m-label hkp-empty';
@@ -721,6 +728,8 @@
         const p = PALETTE[colorIdx];
         if (p && p.lum === 'light') el.dataset.lum = 'light'; else delete el.dataset.lum;
         el.style.setProperty('--kbg', (p && p.hex) || '#1e1b16');
+        const dotEl = el.querySelector('.hkp-dot');
+        if (dotEl) dotEl.style.background = (p && p.hex) || '';
         if (!REMOTE) applyStack(el, otherLayers(keyId, activeLayer));
         fitLabel(lbl);
     }
@@ -761,6 +770,8 @@
         const p = PALETTE[colorIdx];
         if (p && p.lum === 'light') el.dataset.lum = 'light'; else delete el.dataset.lum;
         el.style.setProperty('--kbg', (p && p.hex) || '#1e1b16');
+        const dotEl = el.querySelector('.hkp-dot');
+        if (dotEl) dotEl.style.background = (p && p.hex) || '';
         if (!REMOTE) applyStack(el, otherLayers(keyId, activeLayer));
         fitLabel(lbl);
         // the drawing's button takes the colour too
@@ -1364,6 +1375,23 @@
         syncRemoteStatus();
         document.getElementById('hkp-scan-enabled').checked = state.settings.scanConfigs !== false;
         syncScanStatus();
+        syncColorStyle();
+    }
+    // --Claude 2026-11-20: Key colours = Fill (the whole key) or Dot (a dot in the corner of a plain key;
+    // keeps the panel even and leaves room for icons). Stack cards go plain in Dot mode too.
+    function colorStyle() { return state.settings.colorStyle === 'dot' ? 'dot' : 'fill'; }
+    function applyColorStyle() {
+        document.body.classList.toggle('hkp-color-dot', colorStyle() === 'dot');
+        document.querySelectorAll('.hkp-stacked').forEach(paintStack);
+    }
+    function syncColorStyle() {
+        const f = document.getElementById('hkp-cs-fill'), d = document.getElementById('hkp-cs-dot');
+        if (f) f.classList.toggle('hkp-on', colorStyle() === 'fill');
+        if (d) d.classList.toggle('hkp-on', colorStyle() === 'dot');
+    }
+    function setColorStyle(v) {
+        state.settings.colorStyle = v === 'dot' ? 'dot' : 'fill';
+        applyColorStyle(); syncColorStyle(); save();
     }
     // --Claude 2026-09-30: a tablet / phone keeps its OWN label size (remote.js, stored on that
     // device), so shrinking labels to fit small keys there never changes the in-game panel.
@@ -2190,7 +2218,7 @@
                     }
                     if (!Object.keys(k.layers).length) delete state.keys[keyId];
                 }
-                renderProfiles(); refreshAll(); updateModifierBadge(); applyTapModeBg(); applyLabelSize(); applyPanelScale(); applyPanelOpacity(); applyFont(); syncFontButton(); updateSwatchBarLabel();
+                applyColorStyle(); renderProfiles(); refreshAll(); updateModifierBadge(); applyTapModeBg(); applyLabelSize(); applyPanelScale(); applyPanelOpacity(); applyFont(); syncFontButton(); updateSwatchBarLabel();
                 if (settingsOpen) syncSettingsInputs();
                 // Tell the DLL about the persisted toggle key so its input
                 // sink knows which key opens the panel. (Replaces what the old
@@ -2231,7 +2259,7 @@
                 self.hide();
             });
         },
-        toggleSettings, setToggleEnabled, startBindToggleKey, exitColorMode, cycleTapMode, setLabelSize,
+        toggleSettings, setToggleEnabled, startBindToggleKey, exitColorMode, cycleTapMode, setLabelSize, setColorStyle,
         layout: () => layoutKeyboard(),
         setPanelScale, previewPanelScale, setPanelOpacity,
         setFonts, toggleFontDD, pickFont,
