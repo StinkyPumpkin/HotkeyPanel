@@ -8,57 +8,55 @@
 <body>
 <div id="hkp-root" class="hkp-hidden">
 
-    <!-- Corner ornaments -->
-    <div class="corner-ornament corner-tl"><div class="diamond"></div></div>
-    <div class="corner-ornament corner-tr"><div class="diamond"></div></div>
-    <div class="corner-ornament corner-bl"><div class="diamond"></div></div>
-    <div class="corner-ornament corner-br"><div class="diamond"></div></div>
-
-    <!-- Top bar -->
-    <div class="hkp-topbar">
-        <div class="hkp-title">Hotkey Panel</div>
-        <div class="hkp-topbar-spacer"></div>
-        <div class="hkp-active-modifiers" id="hkp-active-mods" title="Active modifier layer">Default layer</div>
-        <button class="hkp-topbar-btn" id="hkp-btn-tap" onclick="HKP.cycleTapMode()" title="Cycle tap mode: Single / Double / Long">Tap: Single</button>
-        <button class="hkp-topbar-btn" id="hkp-btn-settings" onclick="HKP.toggleSettings()">Settings</button>
-        <button class="hkp-topbar-btn hkp-close-btn" onclick="HKP.close(event)">&times;</button>
-    </div>
-
-    <!-- Body: keyboard on top (full width), profile sidebar + mouse on bottom -->
+    <!-- --Claude 2026-11-20 polish: Edge look. The keyboard has the whole top; the old top bar and
+         colour row now sit in the bottom row, right of the mouse, with a box that shows the pointed-at key in full. -->
     <main class="hkp-main">
 
-        <!-- Color swatch bar -->
-        <div class="hkp-swatch-bar" id="hkp-swatch-bar">
-            <div class="hkp-swatch-label" id="hkp-swatch-label"></div>
-            <div class="hkp-swatches" id="hkp-swatches"></div>
-            <button class="hkp-swatch-exit" onclick="HKP.exitColorMode()">Exit color mode</button>
-        </div>
-
         <!-- Keyboard: full width of main -->
-        <div class="hkp-keyboard">
+        <div class="hkp-keyboard hkp-panel">
             <div class="hkp-kb-main" id="hkp-kb-main"></div>
             <div class="hkp-kb-nav" id="hkp-kb-nav"></div>
             <div class="hkp-kb-numpad" id="hkp-kb-numpad"></div>
         </div>
 
-        <!-- Bottom half: sidebar (profiles + legend) + mouse image -->
+        <!-- Bottom row: profiles | G-keys | mouse | pointed-at key | layer, settings, colours -->
         <div class="hkp-bottom">
-            <aside class="hkp-sidebar">
-                <div class="hkp-sidebar-header">Mod Profiles</div>
+            <aside class="hkp-sidebar hkp-panel">
+                <div class="hkp-sidebar-header">Mod profiles</div>
                 <div class="hkp-profile-list" id="hkp-profile-list"></div>
                 <div class="hkp-sidebar-footer">
                     <div class="hkp-legend">
                         <div class="hkp-legend-row"><span class="hkp-sw hkp-sw-mod"></span> Modifier key</div>
-                        <div class="hkp-legend-row"><span class="hkp-sw hkp-sw-reserved"></span> Toggle key (locked)</div>
-                        <div class="hkp-legend-row"><span class="hkp-sw hkp-sw-dim"></span> Not in active profile</div>
+                        <div class="hkp-legend-row"><span class="hkp-sw hkp-sw-reserved"></span> Opens this panel</div>
+                        <div class="hkp-legend-row"><span class="hkp-sw hkp-sw-stack"></span> More on other layers</div>
                     </div>
                 </div>
             </aside>
 
-            <div class="hkp-mouse-wrap">
-                <!-- --Claude: G-key column, populated only when the GKeys addon overrides js/gkeys.js -->
-                <div class="hkp-gkeys hkp-hidden" id="hkp-gkeys"></div>
+            <!-- --Claude: G-key block, populated only when the GKeys addon overrides js/gkeys.js -->
+            <div class="hkp-gkeys hkp-panel hkp-hidden" id="hkp-gkeys"></div>
+
+            <div class="hkp-mouse-wrap hkp-panel">
                 <div class="hkp-mouse-stage" id="hkp-mouse-stage"></div>
+            </div>
+
+            <div class="hkp-info hkp-panel" id="hkp-info"></div>
+
+            <div class="hkp-side hkp-panel">
+                <div class="hkp-side-head">
+                    <div class="hkp-title">Hotkey Panel</div>
+                    <button class="hkp-topbar-btn hkp-close-btn" onclick="HKP.close(event)">&times;</button>
+                </div>
+                <div class="hkp-topbar">
+                    <div class="hkp-active-modifiers" id="hkp-active-mods" title="Active modifier layer">Default layer</div>
+                    <button class="hkp-topbar-btn" id="hkp-btn-tap" onclick="HKP.cycleTapMode()" title="Cycle tap mode: Single / Double / Long">Tap: Single</button>
+                    <button class="hkp-topbar-btn" id="hkp-btn-settings" onclick="HKP.toggleSettings()">Settings</button>
+                </div>
+                <div class="hkp-swatch-bar" id="hkp-swatch-bar">
+                    <div class="hkp-swatch-label" id="hkp-swatch-label"></div>
+                    <div class="hkp-swatches" id="hkp-swatches"></div>
+                    <button class="hkp-swatch-exit" onclick="HKP.exitColorMode()">Exit colour mode</button>
+                </div>
             </div>
         </div>
     </main>
@@ -174,11 +172,11 @@
             </div>
             <div class="hkp-setting-row" id="hkp-row-font">
                 <div class="hkp-setting-label">
-                    UI font
-                    <div class="hkp-setting-hint">Any font installed on your PC. Applies to the whole panel and your labels.</div>
+                    Label font
+                    <div class="hkp-setting-hint">Any font installed on your PC, for your key and mouse labels. Menus and settings keep a plain font so they stay easy to read.</div>
                 </div>
                 <div class="hkp-setting-control hkp-font-dd" id="hkp-font-dd">
-                    <button class="hkp-btn" id="hkp-font-btn" onclick="HKP.toggleFontDD()">Default (EB Garamond)</button>
+                    <button class="hkp-btn" id="hkp-font-btn" onclick="HKP.toggleFontDD()">Default (Segoe UI)</button>
                     <div class="hkp-font-list hkp-hidden" id="hkp-font-list"></div>
                 </div>
             </div>

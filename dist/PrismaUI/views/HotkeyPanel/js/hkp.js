@@ -229,6 +229,7 @@
         updateSwatchBarLabel();
         layoutKeyboard();
         refreshAll();
+        renderInfo();
         dispatchToBridge('hkpReady', '1');
         // First-run bootstrap: tell the DLL the default toggle key even before
         // any saved state arrives. loadState() will push it again later if a
@@ -261,16 +262,19 @@
         const mainCs = getComputedStyle(main);
         const mainPadY = parseFloat(mainCs.paddingTop) + parseFloat(mainCs.paddingBottom);
         const gap = parseFloat(mainCs.gap) || 0;
-        // Keyboard gets the majority of the vertical; mouse capped to 40vh via CSS.
+        // --Claude 2026-11-20: the keyboard takes all the height the bottom row (profiles, mouse, info,
+        // controls) leaves; the bottom row keeps at least 26%. Keys are width-bound on a 16:9 screen, so
+        // the spare height makes them taller (up to 1.35x their width) = more lines for a label.
         const mainInner = main.clientHeight - mainPadY - gap;
-        const kbMaxH = mainInner * 0.62;
+        const kbMaxH = mainInner - Math.max(230, mainInner * 0.26);
         const kbPadY = parseFloat(kbCs.paddingTop) + parseFloat(kbCs.paddingBottom);
         const availH = kbMaxH - kbPadY;
         const uW = Math.floor((availW - 108) / 22);
         const uH = Math.floor((availH - 20) / 6);
         const u = Math.max(40, Math.min(180, Math.min(uW, uH)));
         document.documentElement.style.setProperty('--hkp-u', u + 'px');
-        let keyH = u;
+        let keyH = REMOTE ? u : Math.max(u, Math.min(uH, Math.round(u * 1.35)));
+        stackStep = Math.max(3, Math.min(8, Math.round(u / 18)));
         // --Claude 2026-09-30: on a tablet with the mouse & profiles section folded away the
         // keyboard has the whole height, but a landscape screen keeps the keys width-bound, so
         // they grow TALLER instead (more lines for a label) - up to 2.5x their width.
@@ -283,9 +287,163 @@
             keyH = Math.max(u, Math.min(Math.floor((fullH - 20) / 6), Math.floor(u * 2.5)));
         }
         document.documentElement.style.setProperty('--hkp-key-h', keyH + 'px');
+        refitAll();
     }
 
     window.addEventListener('resize', layoutKeyboard);
+
+    // ---------------------------------------------------------------
+    // --Claude 2026-11-20 polish: stacked keys, labels that fit, the pointed-at name scrolls,
+    // and the info box in the bottom row.
+    // ---------------------------------------------------------------
+    let stackStep = 4;
+    function escHtml(s) {
+        return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    }
+    // "ShiftLeft+ControlLeft" / "double:default" -> "Ctrl + Shift" / "Double tap"
+    function layerName(layerId) {
+        let tap = 'single', mods = layerId || 'default';
+        const i = mods.indexOf(':');
+        if (i > 0) { tap = mods.slice(0, i); mods = mods.slice(i + 1); }
+        const m = mods === 'default' ? '' : mods.split('+').map(k => KEY_CAPTION[k] || k).join(' + ');
+        const t = tap === 'single' ? '' : TAP_LABEL[tap] + ' tap';
+        return [m, t].filter(Boolean).join(', ') || 'Default';
+    }
+    // Every other layer where this key has a name (the user's own or a mod's), with its colour.
+    function otherLayers(keyId, cur) {
+        const ids = new Set();
+        const k = state.keys[keyId];
+        if (k && k.layers) for (const [id, l] of Object.entries(k.layers)) if (l && l.label) ids.add(id);
+        for (const [, e] of (extByKey[keyId] || [])) ids.add(extLayer(e));
+        ids.delete(cur);
+        const out = [];
+        for (const id of ids) {
+            const v = viewLayer(keyId, id);
+            if (v && v.label) out.push({ id, label: v.label, color: resolveColor(v, state.activeProfile) });
+        }
+        return out;
+    }
+    // Up to 3 cards peek out under the key, each in the colour of what that layer holds. The key itself
+    // gets smaller by the same amount (--st), so the stack stays inside the key's own cell.
+    function applyStack(el, others) {
+        el._stackCols = others.slice(0, 3).map(o => o.color);
+        paintStack(el);
+    }
+    function paintStack(el) {
+        const cols = el._stackCols || [];
+        el.classList.toggle('hkp-stacked', cols.length > 0);
+        if (!cols.length) { el.style.removeProperty('--st'); el.style.boxShadow = ''; return; }
+        const s = stackStep, sh = [];
+        cols.forEach((c, i) => {
+            const d = s * (i + 1), fill = (PALETTE[c] && PALETTE[c].hex) || '#3b3428';
+            sh.push(d + 'px ' + d + 'px 0 -1px ' + fill, d + 'px ' + d + 'px 0 0 rgba(6,5,4,.95)');
+        });
+        el.style.setProperty('--st', (s * cols.length) + 'px');
+        el.style.boxShadow = sh.join(', ');
+    }
+    // A label shrinks (to 72% of the label size at most) until no word is cut and no line is lost.
+    // Still too long: it ends in "..." and scrolls while pointed at; the info box shows it in full.
+    function fitLabel(lbl) {
+        if (REMOTE || !lbl || lbl.classList.contains('hkp-run')) return;
+        const base = labelSize();
+        const key = lbl.textContent + '|' + base + '|' + lbl.parentNode.clientWidth + 'x' + lbl.parentNode.clientHeight;
+        if (lbl._fit === key) return;
+        lbl._fit = key;
+        lbl.style.fontSize = '';
+        lbl.classList.remove('hkp-ovf');
+        if (!lbl.textContent || !lbl.clientWidth) return;
+        const over = () => lbl.scrollWidth > lbl.clientWidth + 1 || lbl.scrollHeight > lbl.clientHeight + 1;
+        const min = Math.max(9, Math.round(base * 0.72));
+        let size = base;
+        for (let i = 0; i < 5 && over() && size > min; i++) {
+            const byW = lbl.scrollWidth > lbl.clientWidth + 1 ? Math.floor(size * lbl.clientWidth / lbl.scrollWidth) : size;
+            size = Math.max(min, Math.min(size - 1, byW));
+            lbl.style.fontSize = size + 'px';
+        }
+        if (over()) lbl.classList.add('hkp-ovf');
+    }
+    function refitAll() {
+        document.querySelectorAll('.hkp-key-label, .hkp-m-label').forEach(fitLabel);
+        document.querySelectorAll('.hkp-stacked').forEach(paintStack);
+    }
+    let mq = null;
+    function startMarquee(el) {
+        stopMarquee();
+        const lbl = el && el.querySelector('.hkp-key-label, .hkp-m-label');
+        if (!lbl || !lbl.classList.contains('hkp-ovf')) return;
+        const txt = lbl.textContent;
+        lbl.classList.add('hkp-run');
+        lbl.textContent = '';
+        const track = document.createElement('span');
+        track.className = 'hkp-run-track';
+        const a = document.createElement('b'); a.textContent = txt;
+        track.appendChild(a); track.appendChild(a.cloneNode(true));
+        lbl.appendChild(track);
+        const unit = a.offsetWidth, t0 = performance.now(), pause = 450, speed = 42;
+        mq = { lbl, txt, raf: 0 };
+        const step = now => {
+            const t = now - t0, x = t < pause ? 0 : ((t - pause) / 1000 * speed) % unit;
+            track.style.transform = 'translateX(' + (-x) + 'px)';
+            mq.raf = requestAnimationFrame(step);
+        };
+        mq.raf = requestAnimationFrame(step);
+    }
+    function stopMarquee() {
+        if (!mq) return;
+        cancelAnimationFrame(mq.raf);
+        mq.lbl.classList.remove('hkp-run');
+        mq.lbl.textContent = mq.txt;
+        mq = null;
+    }
+    let infoKey = null, infoTimer = null;
+    function onKeyHover(keyId, el) {
+        clearTimeout(infoTimer);
+        infoKey = keyId;
+        renderInfo();
+        startMarquee(el);
+        litMouseZone(keyId, true);
+    }
+    function onKeyLeave(keyId) {
+        stopMarquee();
+        litMouseZone(keyId, false);
+        clearTimeout(infoTimer);
+        infoTimer = setTimeout(() => { infoKey = null; renderInfo(); }, 150);
+    }
+    function litMouseZone(keyId, on) {
+        const z = document.querySelector('.hkp-mouse-svg [data-mz="' + keyId + '"]');
+        if (z) z.classList.toggle('hkp-lit', on);
+    }
+    function colourChip(idx) {
+        const p = PALETTE[idx];
+        return '<span class="hkp-chip"' + (p && p.hex ? ' style="background:' + p.hex + '"' : '') + '></span>';
+    }
+    function renderInfo() {
+        const box = document.getElementById('hkp-info');
+        if (!box) return;
+        if (!infoKey) {
+            box.innerHTML = '<div class="hkp-info-idle">Point at a key to see its whole name and what it does on its other layers.</div>';
+            return;
+        }
+        const keyId = infoKey, cur = currentLayerId();
+        const reserved = isReservedKey(keyId);
+        const v = reserved ? { label: 'Opens Hotkey Panel', color: 0 } : viewLayer(keyId, cur);
+        const isMod = state.modifierKeys.includes(keyId);
+        let h = '<div class="hkp-info-head"><span class="hkp-info-key">' + escHtml(KEY_CAPTION[keyId] || keyId) + '</span>' +
+                '<span class="hkp-info-layer">' + escHtml(layerName(cur)) + '</span></div>';
+        if (v && v.label) h += '<div class="hkp-info-name">' + colourChip(resolveColor(v, state.activeProfile)) + '<span>' + escHtml(v.label) + '</span></div>';
+        else h += '<div class="hkp-info-name hkp-info-empty">' + (isMod ? 'Modifier key: click it to show its layer.' : 'Nothing here. Right-click to name it.') + '</div>';
+        const others = reserved ? [] : otherLayers(keyId, cur);
+        if (others.length) {
+            h += '<div class="hkp-info-sub">On other layers</div>';
+            others.forEach(o => { h += '<div class="hkp-info-row">' + colourChip(o.color) + '<b>' + escHtml(layerName(o.id)) + '</b><span>' + escHtml(o.label) + '</span></div>'; });
+        }
+        const owners = conflictOwners(keyId);
+        if (owners.length > 1) {
+            h += '<div class="hkp-info-sub hkp-info-warn">Also uses this key</div>';
+            owners.forEach(o => { h += '<div class="hkp-info-row hkp-info-warnrow"><span>' + escHtml(o) + '</span></div>'; });
+        }
+        box.innerHTML = h;
+    }
 
     function buildKeyCaptions() {
         for (const row of KB_MAIN) for (const cell of row) if (cell && cell[0] !== '_gap') KEY_CAPTION[cell[0]] = cell[1];
@@ -339,8 +497,8 @@
             const el = makeKeyEl(kid, cap, null);
             el.style.gridColumn = `${col} / span ${cs}`;
             el.style.gridRow = `${row} / span ${rs}`;
-            if (rs > 1) el.style.height = `calc(${rs} * var(--hkp-key-h) + ${rs - 1} * var(--hkp-key-gap))`;
-            if (cs > 1) el.style.width = `calc(${cs} * var(--hkp-u) + ${cs - 1} * var(--hkp-key-gap))`;
+            if (rs > 1) el.style.height = `calc(${rs} * var(--hkp-key-h) + ${rs - 1} * var(--hkp-key-gap) - var(--st, 0px))`;
+            if (cs > 1) el.style.width = `calc(${cs} * var(--hkp-u) + ${cs - 1} * var(--hkp-key-gap) - var(--st, 0px))`;
             np.appendChild(el);
         });
     }
@@ -367,8 +525,13 @@
             if (e.button === 2) { e.preventDefault(); e.stopPropagation(); onKeyContext(keyId, el, e); }
         });
         attachLongPress(el, keyId);
-        el.addEventListener('mouseenter', (e) => maybeShowTooltip(keyId, el, e));
-        el.addEventListener('mouseleave', hideTooltip);
+        if (REMOTE) {
+            el.addEventListener('mouseenter', (e) => maybeShowTooltip(keyId, el, e));
+            el.addEventListener('mouseleave', hideTooltip);
+        } else {
+            el.addEventListener('mouseenter', () => onKeyHover(keyId, el));
+            el.addEventListener('mouseleave', () => onKeyLeave(keyId));
+        }
         return el;
     }
 
@@ -420,20 +583,59 @@
     // ---------------------------------------------------------------
     // Mouse rendering (inputs + state rules shared with keys)
     // ---------------------------------------------------------------
+    // --Claude 2026-11-20: a drawn generic mouse (no brand picture) between two columns of button
+    // boxes; the pointed-at box lights its button on the drawing, and bound buttons take their colour.
+    const MOUSE_LEFT  = ['Mouse1', 'MouseTiltLeft', 'MouseSideLeft1', 'MouseSideLeft2', 'MouseSideLeft3'];
+    const MOUSE_RIGHT = ['Mouse2', 'MouseTiltRight', 'MouseSideRight1', 'MouseSideRight2', 'MouseSideRight3'];
+    const MOUSE_SVG =
+        '<svg class="hkp-mouse-svg" viewBox="0 0 120 200" preserveAspectRatio="xMidYMid meet">' +
+        '<path class="hkp-m-body" d="M60 4 C30 4 13 24 11 60 L9 130 C9 174 31 196 60 196 C89 196 111 174 111 130 L109 60 C107 24 90 4 60 4 Z"/>' +
+        '<path class="hkp-mz" data-mz="Mouse1" d="M58 7 C32 8 15.5 26 13.5 60 L12.7 84 Q36 91 58 92 Z"/>' +
+        '<path class="hkp-mz" data-mz="Mouse2" d="M62 7 C88 8 104.5 26 106.5 60 L107.3 84 Q84 91 62 92 Z"/>' +
+        '<rect class="hkp-mz" data-mz="Mouse3" x="53.5" y="22" width="13" height="32" rx="6.5"/>' +
+        '<path class="hkp-m-ridge" d="M56.5 29 H63.5 M56.5 34 H63.5 M56.5 39 H63.5 M56.5 44 H63.5 M56.5 49 H63.5"/>' +
+        '<path class="hkp-mz" data-mz="MouseTiltLeft" d="M49 31 L43 38 L49 45 Z"/>' +
+        '<path class="hkp-mz" data-mz="MouseTiltRight" d="M71 31 L77 38 L71 45 Z"/>' +
+        '<rect class="hkp-mz" data-mz="MouseSideLeft1" x="4" y="100" width="9" height="17" rx="3"/>' +
+        '<rect class="hkp-mz" data-mz="MouseSideLeft2" x="4" y="121" width="9" height="17" rx="3"/>' +
+        '<rect class="hkp-mz" data-mz="MouseSideLeft3" x="4" y="142" width="9" height="17" rx="3"/>' +
+        '<rect class="hkp-mz" data-mz="MouseSideRight1" x="107" y="100" width="9" height="17" rx="3"/>' +
+        '<rect class="hkp-mz" data-mz="MouseSideRight2" x="107" y="121" width="9" height="17" rx="3"/>' +
+        '<rect class="hkp-mz" data-mz="MouseSideRight3" x="107" y="142" width="9" height="17" rx="3"/>' +
+        '</svg>';
     function renderMouse() {
         const stage = document.getElementById('hkp-mouse-stage');
         stage.innerHTML = '';
-        MOUSE.forEach(([kid, placeholder, x, y]) => {
-            stage.appendChild(makeMouseInput(kid, placeholder, x, y));
+        const col = (cls, ids) => {
+            const c = document.createElement('div');
+            c.className = 'hkp-m-col ' + cls;
+            ids.forEach(k => c.appendChild(makeMouseInput(k, KEY_CAPTION[k])));
+            return c;
+        };
+        const mid = document.createElement('div');
+        mid.className = 'hkp-m-mid';
+        mid.appendChild(makeMouseInput('Mouse3', KEY_CAPTION.Mouse3));
+        mid.insertAdjacentHTML('beforeend', MOUSE_SVG);
+        stage.appendChild(col('hkp-m-left', MOUSE_LEFT));
+        stage.appendChild(mid);
+        stage.appendChild(col('hkp-m-right', MOUSE_RIGHT));
+        stage.querySelectorAll('[data-mz]').forEach(z => {
+            const k = z.getAttribute('data-mz');
+            const box = stage.querySelector('.hkp-m-input[data-key-id="' + k + '"]');
+            z.addEventListener('mouseenter', () => { if (box) { box.classList.add('hkp-m-hot'); onKeyHover(k, box); } });
+            z.addEventListener('mouseleave', () => { if (box) box.classList.remove('hkp-m-hot'); onKeyLeave(k); });
         });
     }
 
-    function makeMouseInput(keyId, placeholder, xPct, yPct) {
+    function makeMouseInput(keyId, placeholder) {
         const el = document.createElement('div');
         el.className = 'hkp-m-input';
         el.dataset.keyId = keyId;
-        el.style.left = xPct + '%';
-        el.style.top = yPct + '%';
+
+        const cap = document.createElement('div');
+        cap.className = 'hkp-key-cap';
+        cap.textContent = placeholder || keyId;
+        el.appendChild(cap);
 
         const lbl = document.createElement('div');
         lbl.className = 'hkp-m-label hkp-empty';
@@ -448,8 +650,13 @@
             if (e.button === 2) { e.preventDefault(); e.stopPropagation(); onKeyContext(keyId, el, e); }
         });
         attachLongPress(el, keyId);
-        el.addEventListener('mouseenter', (e) => maybeShowMouseTooltip(el, e));
-        el.addEventListener('mouseleave', hideTooltip);
+        if (REMOTE) {
+            el.addEventListener('mouseenter', (e) => maybeShowMouseTooltip(el, e));
+            el.addEventListener('mouseleave', hideTooltip);
+        } else {
+            el.addEventListener('mouseenter', () => onKeyHover(keyId, el));
+            el.addEventListener('mouseleave', () => onKeyLeave(keyId));
+        }
         return el;
     }
 
@@ -479,6 +686,7 @@
         document.querySelectorAll('.hkp-key').forEach(el => applyKeyVisual(el, activeLayer, activeProf));
         document.querySelectorAll('.hkp-m-input').forEach(el => applyMouseVisual(el, activeLayer, activeProf));
         if (moveMode) markMoveTargets();
+        if (infoKey) renderInfo();
     }
 
     function applyKeyVisual(el, activeLayer, activeProf) {
@@ -496,11 +704,14 @@
         el.classList.toggle('hkp-dim', dim);
 
         const lbl = el.querySelector('.hkp-key-label');
+        if (mq && mq.lbl === lbl) stopMarquee();
         if (reserved) {
             lbl.textContent = 'Hotkeys';
             lbl.classList.remove('hkp-empty');
             el.dataset.color = '0';
             delete el.dataset.lum;
+            applyStack(el, []);
+            fitLabel(lbl);
             return;
         }
         if (keyData && keyData.label) { lbl.textContent = keyData.label; lbl.classList.remove('hkp-empty'); }
@@ -509,6 +720,9 @@
         el.dataset.color = String(colorIdx);
         const p = PALETTE[colorIdx];
         if (p && p.lum === 'light') el.dataset.lum = 'light'; else delete el.dataset.lum;
+        el.style.setProperty('--kbg', (p && p.hex) || '#1e1b16');
+        if (!REMOTE) applyStack(el, otherLayers(keyId, activeLayer));
+        fitLabel(lbl);
     }
 
     // Per-profile colour resolution:
@@ -538,6 +752,7 @@
         el.classList.toggle('hkp-dim', dim);
 
         const lbl = el.querySelector('.hkp-m-label');
+        if (mq && mq.lbl === lbl) stopMarquee();
         if (keyData && keyData.label) { lbl.textContent = keyData.label; lbl.classList.remove('hkp-empty'); }
         else { lbl.textContent = ''; lbl.classList.add('hkp-empty'); }
 
@@ -545,6 +760,13 @@
         el.dataset.color = String(colorIdx);
         const p = PALETTE[colorIdx];
         if (p && p.lum === 'light') el.dataset.lum = 'light'; else delete el.dataset.lum;
+        el.style.setProperty('--kbg', (p && p.hex) || '#1e1b16');
+        if (!REMOTE) applyStack(el, otherLayers(keyId, activeLayer));
+        fitLabel(lbl);
+        // the drawing's button takes the colour too
+        const z = document.querySelector('.hkp-mouse-svg [data-mz="' + keyId + '"]');
+        if (z) z.style.fill = p && p.hex ? p.hex : '';
+        if (z) z.classList.toggle('hkp-bound', !!(keyData && keyData.label));
     }
 
     // ---------------------------------------------------------------
@@ -1047,7 +1269,8 @@
                 : 'Color mode — click keys to apply' + forProf + '. Click swatch again or press ESC to exit.';
             el.classList.remove('hkp-swatch-label-tap');
         } else {
-            el.textContent = 'Tap mode: ' + (TAP_LABEL[state.activeTapMode || 'single']);
+            // --Claude 2026-11-20: the tap mode already shows on its button
+            el.textContent = REMOTE ? 'Tap mode: ' + (TAP_LABEL[state.activeTapMode || 'single']) : 'Colours';
             el.classList.add('hkp-swatch-label-tap');
         }
     }
@@ -1164,6 +1387,7 @@
     function applyLabelSize() {
         document.documentElement.style.setProperty('--hkp-label-size', labelSize() + 'px');
         if (REMOTE && window.HKP_REMOTE_LABEL) window.HKP_REMOTE_LABEL.fit();
+        else refitAll();
     }
     // Live preview while dragging — updates only the percentage label so the
     // user sees feedback without triggering an expensive layout pass on every
@@ -1211,12 +1435,15 @@
     }
     function syncFontButton() {
         const btn = document.getElementById('hkp-font-btn');
-        if (btn) btn.textContent = state.settings.fontFamily || 'Default (EB Garamond)';
+        if (btn) btn.textContent = state.settings.fontFamily || 'Default (Segoe UI)';
     }
     function applyFont() {
         const fam = state.settings.fontFamily;
-        // Inline body style overrides the stylesheet; '' reverts to the default stack.
-        document.body.style.fontFamily = fam ? '"' + fam + '", "EB Garamond", "Palatino Linotype", Georgia, serif' : '';
+        // --Claude 2026-11-20: the chosen font is for the labels only; menus, settings and the panel's own
+        // text keep the plain Edge fonts. '' = the default label font.
+        if (fam) document.documentElement.style.setProperty('--hkp-label-font', '"' + fam + '", "Segoe UI", Arial, sans-serif');
+        else document.documentElement.style.removeProperty('--hkp-label-font');
+        if (!REMOTE) refitAll();
     }
     function toggleFontDD() {
         fontDDOpen = !fontDDOpen;
