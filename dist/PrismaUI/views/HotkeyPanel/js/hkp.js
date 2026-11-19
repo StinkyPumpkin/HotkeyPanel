@@ -289,6 +289,7 @@
         }
         document.documentElement.style.setProperty('--hkp-key-h', keyH + 'px');
         refitAll();
+        drawGroupOutline();
     }
 
     window.addEventListener('resize', layoutKeyboard);
@@ -438,10 +439,20 @@
             h += '<div class="hkp-info-sub">On other layers</div>';
             others.forEach(o => { h += '<div class="hkp-info-row">' + colourChip(o.color) + '<b>' + escHtml(layerName(o.id)) + '</b><span>' + escHtml(o.label) + '</span></div>'; });
         }
-        const owners = conflictOwners(keyId);
-        if (owners.length > 1) {
-            h += '<div class="hkp-info-sub hkp-info-warn">Also uses this key</div>';
-            owners.forEach(o => { h += '<div class="hkp-info-row hkp-info-warnrow"><span>' + escHtml(o) + '</span></div>'; });
+        // every other thing bound to this key; the ones that clash carry the "!"
+        const all = [];
+        const own = getKeyLayer(keyId, cur);
+        if (own && own.label && v && own.label !== v.label) all.push({ t: own.label + '  (your name)', clash: false });
+        (extByKey[keyId] || []).forEach(([s, e]) => {
+            const t = extLabel(s, e) + '  (' + ownerName(s) + ')';
+            if (v && extShownLabel(s, e) === v.label && extLayer(e) === cur) return;
+            all.push({ t: t + (countsAsConflict(s, e) ? '' : '  - only in its own menu'), clash: countsAsConflict(s, e) });
+        });
+        (gameKeys[keyId] || []).forEach(ev => all.push({ t: ev + '  (Skyrim control)', clash: true }));
+        const nClash = conflictOwners(keyId).length;
+        if (all.length) {
+            h += '<div class="hkp-info-sub' + (nClash > 1 ? ' hkp-info-warn' : '') + '">' + (nClash > 1 ? 'Clash - ' + nClash + ' things use this key' : 'Also on this key') + '</div>';
+            all.forEach(o => { h += '<div class="hkp-info-row' + (o.clash && nClash > 1 ? ' hkp-info-warnrow' : '') + '">' + (o.clash && nClash > 1 ? '<i class="hkp-info-bang">!</i>' : '<i class="hkp-info-dot"></i>') + '<span>' + escHtml(o.t) + '</span></div>'; });
         }
         box.innerHTML = h;
     }
@@ -694,6 +705,59 @@
         document.querySelectorAll('.hkp-m-input').forEach(el => applyMouseVisual(el, activeLayer, activeProf));
         if (moveMode) markMoveTargets();
         if (infoKey) renderInfo();
+        drawGroupOutline();
+    }
+
+    // --Claude 2026-11-20: a mod profile's keys get one glowing outline. Keys next to each other share it
+    // (the outline runs round the whole group); a lone key gets its own. Drawn as the outline of the union
+    // of the keys' cells (each grown by half the key gap so neighbours touch), on an SVG over the panel.
+    function drawGroupOutline() {
+        const main = document.querySelector('.hkp-main');
+        if (!main || REMOTE) return;
+        let svg = document.getElementById('hkp-group-svg');
+        if (!svg) {
+            svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.id = 'hkp-group-svg';
+            main.appendChild(svg);
+        }
+        const prof = state.activeProfile;
+        if (!prof || prof === 'DEFAULT' || !main.offsetWidth) { svg.innerHTML = ''; return; }
+        const mr = main.getBoundingClientRect();
+        const gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hkp-key-gap')) || 4;
+        const pad = gap / 2 + 1.5, rd = v => Math.round(v * 2) / 2;
+        const rects = [];
+        document.querySelectorAll('.hkp-key, .hkp-m-input').forEach(el => {
+            if (el.classList.contains('hkp-dim') || el.classList.contains('hkp-reserved') || !el.offsetWidth) return;
+            const r = el.getBoundingClientRect(), st = (el._stackCols || []).length * stackStep;
+            rects.push([rd(r.left - mr.left - pad), rd(r.top - mr.top - pad), rd(r.right - mr.left + st + pad), rd(r.bottom - mr.top + st + pad)]);
+        });
+        if (!rects.length) { svg.innerHTML = ''; return; }
+        const xs = [...new Set(rects.flatMap(r => [r[0], r[2]]))].sort((a, b) => a - b);
+        const ys = [...new Set(rects.flatMap(r => [r[1], r[3]]))].sort((a, b) => a - b);
+        const xi = new Map(xs.map((v, i) => [v, i])), yi = new Map(ys.map((v, i) => [v, i]));
+        const W = xs.length - 1, H = ys.length - 1, cov = new Uint8Array(W * H);
+        for (const r of rects)
+            for (let j = yi.get(r[1]); j < yi.get(r[3]); j++)
+                for (let i = xi.get(r[0]); i < xi.get(r[2]); i++) cov[j * W + i] = 1;
+        const c = (i, j) => (i >= 0 && j >= 0 && i < W && j < H) ? cov[j * W + i] : 0;
+        let d = '';
+        for (let j = 0; j <= H; j++) {
+            let run = -1;
+            for (let i = 0; i <= W; i++) {
+                const e = i < W && c(i, j - 1) !== c(i, j);
+                if (e && run < 0) run = i;
+                if (!e && run >= 0) { d += 'M' + xs[run] + ' ' + ys[j] + 'H' + xs[i]; run = -1; }
+            }
+        }
+        for (let i = 0; i <= W; i++) {
+            let run = -1;
+            for (let j = 0; j <= H; j++) {
+                const e = j < H && c(i - 1, j) !== c(i, j);
+                if (e && run < 0) run = j;
+                if (!e && run >= 0) { d += 'M' + xs[i] + ' ' + ys[run] + 'V' + ys[j]; run = -1; }
+            }
+        }
+        svg.innerHTML = '<path class="hkp-grp-glow" d="' + d + '"/><path class="hkp-grp-line" d="' + d + '"/>';
     }
 
     function applyKeyVisual(el, activeLayer, activeProf) {
@@ -1933,8 +1997,9 @@
         // still count in conflicts and list in the key's menu); announced keys replace it as before.
         if (own && own.label) ext = ext.filter(([s]) => !s.startsWith('SCAN:'));
         if (!ext.length) return own;
+        // --Claude 2026-11-20: one name on the key (the first); every name is listed in the info box
         return {
-            label: ext.map(([s, e]) => extShownLabel(s, e)).join(' / '),
+            label: extShownLabel(ext[0][0], ext[0][1]),
             color: extColor(ext[0][0], ext[0][1]),
             profiles: own && own.profiles,
             profileColors: own && own.profileColors

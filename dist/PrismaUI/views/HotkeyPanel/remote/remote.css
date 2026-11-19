@@ -93,3 +93,6 @@ body.hkp-r-no-bottom .hkp-bottom { display: none !important; }
 /* Keys can be tall here (folded sections): up to 8 lines before the text has to shrink. */
 .hkp-key-label { -webkit-line-clamp: 8 !important; }
 .hkp-key-label.hkp-r-tiny, .hkp-m-label.hkp-r-tiny { overflow-wrap: anywhere !important; }
+
+/* --Claude 2026-11-20: the close button moved to the keyboard corner */
+.hkp-kb-close { display: none !important; }

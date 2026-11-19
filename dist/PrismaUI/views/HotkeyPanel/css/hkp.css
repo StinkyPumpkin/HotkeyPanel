@@ -1038,3 +1038,24 @@ body.hkp-color-dot .hkp-key.hkp-dim, body.hkp-color-dot .hkp-m-input.hkp-dim { b
 }
 .hkp-settings-header .hkp-close-btn:hover { color: var(--hkp-text); border-color: var(--hkp-border-hi); background: #2f2a22; }
 .hkp-settings-panel input[type="range"] { accent-color: var(--hkp-gold); }
+
+/* --Claude 2026-11-20: close button in the keyboard's top-right corner (the empty spot above the numpad) */
+.hkp-keyboard { position: relative; }
+.hkp-kb-close { position: absolute; top: 10px; right: 10px; width: 34px; height: 34px; font-size: 22px; z-index: 8; }
+.hkp-kb-close:hover { color: var(--hkp-gold-hi); border-color: var(--hkp-gold); }
+
+/* --Claude 2026-11-20: the selected mod profile's keys share one glowing outline */
+.hkp-main { position: relative; }
+#hkp-group-svg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; z-index: 7; overflow: visible; }
+.hkp-grp-glow { fill: none; stroke: rgba(232, 204, 142, 0.28); stroke-width: 6; stroke-linecap: square; }
+.hkp-grp-line { fill: none; stroke: #f0d697; stroke-width: 1.6; stroke-linecap: square; }
+
+/* info box: clash rows */
+.hkp-info-bang {
+    flex: none; width: 13px; height: 13px; border-radius: 50%; background: #c8402f; color: #fff;
+    font: 700 10px/13px var(--hkp-ui-font); text-align: center; font-style: normal;
+}
+.hkp-info-dot { flex: none; width: 5px; height: 5px; border-radius: 50%; background: var(--hkp-text-dim); margin: 0 4px; }
+.hkp-info-row { white-space: normal; align-items: flex-start; }
+.hkp-info-row .hkp-info-bang, .hkp-info-row .hkp-info-dot { margin-top: 3px; }
+.hkp-info-row .hkp-info-dot { margin-top: 7px; }
