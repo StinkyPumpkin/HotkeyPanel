@@ -720,7 +720,8 @@ body.hkp-color-mode .hkp-key:not(.hkp-reserved) { cursor: crosshair; }
 
 body.hkp-move-mode .hkp-key.hkp-move-blocked { opacity: 0.25; cursor: not-allowed; }
 body.hkp-move-mode .hkp-m-input.hkp-move-blocked { opacity: 0.25; pointer-events: none; }
-body.hkp-move-mode .hkp-key.hkp-move-target { cursor: crosshair; border: 2px dashed var(--hkp-gold-hi) !important; }
+/* --Claude 2026-11-20: solid, never dashed: one dash makes Ultralight draw every later SVG line dotted (line icons, mouse lines) */
+body.hkp-move-mode .hkp-key.hkp-move-target { cursor: crosshair; border: 2px solid var(--hkp-gold-hi) !important; }
 body.hkp-move-mode .hkp-key.hkp-move-target:hover { background: #3a3a2a !important; }
 
 .hkp-ctx-head {
@@ -737,7 +738,7 @@ body.hkp-pick-mode .hkp-swatch-bar { border-color: var(--hkp-gold); }
 body.hkp-pick-mode .hkp-key:hover,
 body.hkp-pick-mode .hkp-m-input:hover { cursor: pointer; box-shadow: inset 0 0 0 2px var(--hkp-gold-hi); }
 .hkp-key.hkp-pick-current,
-.hkp-m-input.hkp-pick-current { outline: 2px dashed var(--hkp-gold-hi); outline-offset: -4px; }
+.hkp-m-input.hkp-pick-current { outline: 2px solid var(--hkp-gold-hi); outline-offset: -4px; }
 .hkp-pick-box { min-width: 420px; max-width: 560px; }
 .hkp-pick-label { font-size: 13px; color: var(--hkp-text-dim); margin: 12px 0 6px; }
 .hkp-pick-warn { color: #FF6F61; font-size: 13px; margin: -6px 0 4px; white-space: pre-line; }
@@ -1129,7 +1130,7 @@ body.hkp-color-dot .hkp-key.hkp-dim, body.hkp-color-dot .hkp-m-input.hkp-dim { b
 .hkp-grip svg { display: block; pointer-events: none; }
 #hkp-geom-ghost {
     position: fixed; display: none; z-index: 4000; pointer-events: none;
-    border: 2px dashed var(--hkp-gold-hi); background: rgba(232, 204, 142, 0.06);
+    border: 2px solid var(--hkp-gold-hi); background: rgba(232, 204, 142, 0.06);
 }
 body.hkp-dragging, body.hkp-dragging * { cursor: move !important; }
 body.hkp-resizing, body.hkp-resizing * { cursor: nwse-resize !important; }
@@ -1140,3 +1141,124 @@ body.hkp-resizing, body.hkp-resizing * { cursor: nwse-resize !important; }
 /* --Claude 2026-11-20 Magelight test: Settings sat at the screen edge once the panel could move - it belongs to the
    panel (the panel is its containing block now that it has no transform) */
 .hkp-settings-panel { position: absolute; }
+
+/* =========================================================================
+   --Claude 2026-11-20: icons and borders per key (hkp.js "icons and borders")
+   ========================================================================= */
+/* the icon: a picture (background, scaled to fit) or a line icon (SVG in the key's text colour) */
+.hkp-key-icon { display: none; position: relative; pointer-events: none; background: center / contain no-repeat; }
+.hkp-key-icon svg { display: block; width: 100%; height: 100%; overflow: visible; }
+/* keyboard keys: the icon fills the room above the name */
+.hkp-key.hkp-has-icon { flex-direction: column; justify-content: center; gap: 2px; }
+.hkp-key.hkp-has-icon > .hkp-key-icon { display: block; flex: 1 1 0; min-height: 0; width: 100%; }
+.hkp-key.hkp-has-icon > .hkp-key-label { flex: 0 0 auto; max-height: 48%; }
+.hkp-key.hkp-has-icon > .hkp-key-label.hkp-empty { display: none; }
+/* mouse boxes: the icon sits left of the name */
+.hkp-m-input > .hkp-key-icon { flex: none; width: 2em; height: 2em; font-size: var(--hkp-label-size, 18px); margin-right: 2px; }
+.hkp-m-input.hkp-has-icon > .hkp-key-icon { display: block; }
+.hkp-m-input.hkp-has-icon > .hkp-m-label.hkp-empty { display: none; }
+/* Settings > Key icons > Icon only */
+body.hkp-icon-only .hkp-has-icon > .hkp-key-label, body.hkp-icon-only .hkp-has-icon > .hkp-m-label { display: none; }
+body.hkp-icon-only .hkp-m-input.hkp-has-icon { justify-content: center; }
+.hkp-dim > .hkp-key-icon, .hkp-dim > .hkp-ring { opacity: 0.35; }
+
+/* the border: a layer under the text, inside the key. --ring = its colour. */
+.hkp-ring { display: none; position: absolute; left: 0; top: 0; right: 0; bottom: 0; border-radius: 5px; pointer-events: none; }
+.hkp-ring[class*="hkp-ring-"] { display: block; }
+.hkp-ring-thin    { box-shadow: inset 0 0 0 2px var(--ring); }
+.hkp-ring-thick   { box-shadow: inset 0 0 0 4px var(--ring); }
+.hkp-ring-double  { box-shadow: inset 0 0 0 2px var(--ring), inset 0 0 0 4px rgba(0, 0, 0, 0.6), inset 0 0 0 6px var(--ring); }
+.hkp-ring-glow    { box-shadow: inset 0 0 0 1px var(--ring), inset 0 0 12px 1px var(--ring); }
+.hkp-ring-raised  { box-shadow: inset 0 0 0 1px var(--ring), inset 3px 3px 0 0 var(--ring), inset -3px -3px 0 0 rgba(0, 0, 0, 0.55); }
+.hkp-ring-sunken  { box-shadow: inset 0 0 0 1px var(--ring), inset -3px -3px 0 0 var(--ring), inset 3px 3px 7px 0 rgba(0, 0, 0, 0.75); }
+.hkp-ring-side    { box-shadow: inset 5px 0 0 0 var(--ring); }
+.hkp-ring-under   { box-shadow: inset 0 -4px 0 0 var(--ring); }
+.hkp-ring-corners {
+    border-radius: 0;
+    background:
+        linear-gradient(var(--ring), var(--ring)) 0 0 / 34% 3px no-repeat,
+        linear-gradient(var(--ring), var(--ring)) 0 0 / 3px 34% no-repeat,
+        linear-gradient(var(--ring), var(--ring)) 100% 0 / 34% 3px no-repeat,
+        linear-gradient(var(--ring), var(--ring)) 100% 0 / 3px 34% no-repeat,
+        linear-gradient(var(--ring), var(--ring)) 0 100% / 34% 3px no-repeat,
+        linear-gradient(var(--ring), var(--ring)) 0 100% / 3px 34% no-repeat,
+        linear-gradient(var(--ring), var(--ring)) 100% 100% / 34% 3px no-repeat,
+        linear-gradient(var(--ring), var(--ring)) 100% 100% / 3px 34% no-repeat;
+}
+.hkp-ring-ornate {
+    box-shadow: inset 0 0 0 1px var(--ring), inset 0 0 0 4px rgba(0, 0, 0, 0.45), inset 0 0 0 5px var(--ring);
+    background:
+        linear-gradient(var(--ring), var(--ring)) 3px 3px / 7px 7px no-repeat,
+        linear-gradient(var(--ring), var(--ring)) calc(100% - 3px) 3px / 7px 7px no-repeat,
+        linear-gradient(var(--ring), var(--ring)) 3px calc(100% - 3px) / 7px 7px no-repeat,
+        linear-gradient(var(--ring), var(--ring)) calc(100% - 3px) calc(100% - 3px) / 7px 7px no-repeat;
+}
+
+/* the picker */
+.hkp-look-box { min-width: 0; max-width: 96vw; width: 780px; max-height: 94vh; display: flex; flex-direction: column; padding: 20px 22px; }
+.hkp-look-box .hkp-modal-title { margin-bottom: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hkp-look-top { display: flex; gap: 20px; align-items: stretch; margin-bottom: 6px; flex: none; }
+.hkp-look-preview-wrap {
+    flex: none; width: 240px; min-height: 150px; display: flex; align-items: center; justify-content: center;
+    background: rgba(0, 0, 0, 0.35); border: 1px solid var(--hkp-border);
+}
+.hkp-look-preview { position: relative; }
+.hkp-look-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.hkp-look-borders { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.hkp-look-bcell {
+    position: relative; height: 42px; border-radius: 6px; overflow: hidden; cursor: pointer;
+    background: #1e1b16; border: 1px solid rgba(201, 170, 110, 0.18);
+    display: flex; align-items: center; justify-content: center;
+}
+.hkp-look-bcell span { position: relative; font: 11px var(--hkp-ui-font); color: var(--hkp-text-dim); white-space: nowrap; }
+.hkp-look-bcell:hover { background: #2f2a22; }
+.hkp-look-bcell.hkp-on { border: 2px solid var(--hkp-gold-hi); box-shadow: 0 0 8px rgba(232, 204, 142, 0.45); }
+.hkp-look-bcell.hkp-on span { color: var(--hkp-gold-hi); }
+.hkp-look-bcols { display: flex; flex-wrap: wrap; gap: 4px; }
+.hkp-look-bcols .hkp-swatch { width: 20px; height: 20px; flex: none; cursor: pointer; aspect-ratio: auto; }
+.hkp-look-bar { display: flex; align-items: center; gap: 12px; margin: 8px 0; flex: none; }
+.hkp-look-bar .hkp-cw-label { margin: 0; }
+.hkp-look-cats .hkp-btn { min-width: 0; padding: 0 12px; }
+.hkp-look-search { width: 190px; margin: 0 0 0 auto; padding: 6px 10px; font-size: 13px; }
+.hkp-look-grid {
+    display: grid; grid-template-columns: repeat(11, minmax(0, 1fr)); gap: 6px; align-content: start;
+    position: relative; flex: 0 1 340px; min-height: 110px; overflow-y: auto; padding: 6px;
+    background: rgba(0, 0, 0, 0.25); border: 1px solid var(--hkp-border);
+}
+.hkp-look-head {
+    grid-column: 1 / -1; padding: 6px 2px 0;
+    font: 600 11px var(--hkp-ui-font); letter-spacing: 0.08em; text-transform: uppercase; color: var(--hkp-gold-hi);
+}
+.hkp-look-cell {
+    height: 58px; border-radius: 6px; padding: 5px; cursor: pointer; display: flex; color: var(--hkp-text);
+    background: #1e1b16; border: 1px solid rgba(201, 170, 110, 0.18);
+}
+.hkp-look-cell:hover { border-color: var(--hkp-border-hi); background: #2f2a22; }
+.hkp-look-cell.hkp-on { border: 2px solid var(--hkp-gold-hi); box-shadow: 0 0 8px rgba(232, 204, 142, 0.5); background: rgba(201, 164, 92, 0.14); }
+.hkp-look-cell > .hkp-key-icon { display: block; flex: 1; min-width: 0; }
+.hkp-look-none > .hkp-key-icon { display: flex; align-items: center; justify-content: center; font: 12px var(--hkp-ui-font); color: var(--hkp-text-dim); }
+.hkp-look-empty { grid-column: 1 / -1; padding: 16px; font: 13px/1.5 var(--hkp-ui-font); color: var(--hkp-text-dim); }
+.hkp-look-status {
+    flex: none; min-height: 18px; margin: 8px 0 12px; font: 13px var(--hkp-ui-font); color: var(--hkp-text-dim);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* short or narrow screens (a phone, a small window): everything stays reachable; the box scrolls as a last resort */
+.hkp-look-box { overflow-y: auto; }
+@media (max-height: 640px) {
+    .hkp-look-box { padding: 12px 14px; }
+    .hkp-look-box .hkp-modal-title { margin-bottom: 6px; font-size: 14px; }
+    .hkp-look-preview-wrap { width: 150px; min-height: 0; }
+    .hkp-look-bcell { height: 30px; }
+    .hkp-look-grid { flex: 1 1 200px; min-height: 64px; }
+    .hkp-look-cell { height: 48px; }
+    .hkp-look-status { margin: 4px 0 6px; }
+}
+@media (max-width: 700px) {
+    .hkp-look-top { flex-direction: column; gap: 8px; }
+    .hkp-look-preview-wrap { width: auto; min-height: 0; padding: 6px; }
+    .hkp-look-borders { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .hkp-look-bar { flex-wrap: wrap; }
+    .hkp-look-search { width: 100%; margin: 0; }
+    .hkp-look-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+}

@@ -141,6 +141,36 @@
         </div>
     </div>
 
+    <!-- --Claude 2026-11-20: icon and border for one key (right-click a key > Icon and border...) -->
+    <div class="hkp-modal hkp-hidden" id="hkp-modal-look">
+        <div class="hkp-modal-box hkp-look-box">
+            <div class="hkp-modal-title" id="hkp-look-title">Icon and border</div>
+            <div class="hkp-look-top">
+                <div class="hkp-look-preview-wrap"><div class="hkp-look-preview" id="hkp-look-preview"></div></div>
+                <div class="hkp-look-side">
+                    <div class="hkp-cw-label">Border</div>
+                    <div class="hkp-look-borders" id="hkp-look-borders"></div>
+                    <div class="hkp-cw-label">Border colour</div>
+                    <div class="hkp-swatches hkp-look-bcols" id="hkp-look-bcols"></div>
+                </div>
+            </div>
+            <div class="hkp-look-bar">
+                <div class="hkp-cw-label">Icon</div>
+                <div class="hkp-seg hkp-look-cats" id="hkp-look-cats"></div>
+                <input type="text" class="hkp-modal-input hkp-look-search" id="hkp-look-search" maxlength="40" placeholder="Search icons"
+                       oninput="HKP.lookSearch(this.value)">
+            </div>
+            <div class="hkp-look-grid" id="hkp-look-icons"></div>
+            <div class="hkp-look-status" id="hkp-look-status"></div>
+            <div class="hkp-modal-buttons">
+                <button class="hkp-btn" onclick="HKP.lookClear()">No icon or border</button>
+                <span class="hkp-cw-spacer"></span>
+                <button class="hkp-btn" onclick="HKP.closeLook()">Cancel</button>
+                <button class="hkp-btn hkp-btn-primary" onclick="HKP.lookSave()">Save</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Confirm dialog -->
     <div class="hkp-modal hkp-hidden" id="hkp-modal-confirm">
         <div class="hkp-modal-box">
@@ -222,6 +252,16 @@
                     <button class="hkp-btn" id="hkp-cs-dot" onclick="HKP.setColorStyle('dot')">Dot</button>
                 </div>
             </div>
+            <div class="hkp-setting-row" id="hkp-row-iconstyle">
+                <div class="hkp-setting-label">
+                    Key icons
+                    <div class="hkp-setting-hint">Keys with an icon (right-click a key &gt; Icon and border) show it above their name, or the icon alone. The info box always names the key.</div>
+                </div>
+                <div class="hkp-setting-control hkp-seg">
+                    <button class="hkp-btn" id="hkp-is-both" onclick="HKP.setIconStyle('both')">Icon and name</button>
+                    <button class="hkp-btn" id="hkp-is-only" onclick="HKP.setIconStyle('only')">Icon only</button>
+                </div>
+            </div>
             <div class="hkp-setting-row" id="hkp-row-labelsize">
                 <div class="hkp-setting-label">
                     Label font size
@@ -277,6 +317,8 @@
 </div>
 
 <script src="js/gkeys.js?v=1"></script>
-<script src="js/hkp.js?v=33"></script>
+<script src="js/iconlib.js?v=1"></script>
+<script src="js/lineicons.js?v=1"></script>
+<script src="js/hkp.js?v=34"></script>
 </body>
 </html>

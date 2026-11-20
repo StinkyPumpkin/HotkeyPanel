@@ -714,8 +714,11 @@
     // Still too long: it ends in "..." and scrolls while pointed at; the info box shows it in full.
     function fitLabel(lbl) {
         if (REMOTE || !lbl || lbl.classList.contains('hkp-run')) return;
-        const base = labelSize();
-        const key = lbl.textContent + '|' + base + '|' + lbl.parentNode.clientWidth + 'x' + lbl.parentNode.clientHeight;
+        // a key with an icon gives its name less room: it starts a size smaller
+        const withIcon = lbl.parentNode.classList.contains('hkp-has-icon');
+        const base = withIcon ? Math.max(9, Math.round(labelSize() * 0.8)) : labelSize();
+        const key = lbl.textContent + '|' + base + '|' + lbl.parentNode.clientWidth + 'x' + lbl.parentNode.clientHeight +
+            (withIcon ? '|i' + document.body.classList.contains('hkp-icon-only') : '');
         if (lbl._fit === key) return;
         lbl._fit = key;
         lbl.style.fontSize = '';
@@ -888,6 +891,7 @@
         el.className = 'hkp-key';
         el.dataset.keyId = keyId;
         if (widthU) el.dataset.w = String(widthU);
+        el.appendChild(makeLookParts(true));
         const cap = document.createElement('div');
         cap.className = 'hkp-key-cap';
         cap.textContent = caption;
@@ -895,6 +899,7 @@
         const dot = document.createElement('div');
         dot.className = 'hkp-dot';
         el.appendChild(dot);
+        el.appendChild(makeLookParts(false));
         const lbl = document.createElement('div');
         lbl.className = 'hkp-key-label hkp-empty';
         el.appendChild(lbl);
@@ -1082,6 +1087,7 @@
         const el = document.createElement('div');
         el.className = 'hkp-m-input';
         el.dataset.keyId = keyId;
+        el.appendChild(makeLookParts(true));
 
         const cap = document.createElement('div');
         cap.className = 'hkp-key-cap';
@@ -1090,6 +1096,7 @@
         const dot = document.createElement('div');
         dot.className = 'hkp-dot';
         el.appendChild(dot);
+        el.appendChild(makeLookParts(false));
 
         const lbl = document.createElement('div');
         lbl.className = 'hkp-m-label hkp-empty';
@@ -1226,13 +1233,16 @@
             lbl.classList.remove('hkp-empty');
             el.dataset.color = '0';
             delete el.dataset.lum;
+            paintLook(el, null, 0);
             applyStack(el, []);
             fitLabel(lbl);
             return;
         }
         if (keyData && keyData.label) { lbl.textContent = keyData.label; lbl.classList.remove('hkp-empty'); }
         else { lbl.textContent = ''; lbl.classList.add('hkp-empty'); }
-        paintKeyColour(el, resolveColor(keyData, activeProf), dim);
+        const col = resolveColor(keyData, activeProf);
+        paintKeyColour(el, col, dim);
+        paintLook(el, keyData, col);
         applyStack(el, otherLayers(keyId, activeLayer));
         fitLabel(lbl);
     }
@@ -1268,7 +1278,9 @@
         if (keyData && keyData.label) { lbl.textContent = keyData.label; lbl.classList.remove('hkp-empty'); }
         else { lbl.textContent = ''; lbl.classList.add('hkp-empty'); }
 
-        const ci = paintKeyColour(el, resolveColor(keyData, activeProf), dim);
+        const col = resolveColor(keyData, activeProf);
+        const ci = paintKeyColour(el, col, dim);
+        paintLook(el, keyData, col);
         applyStack(el, otherLayers(keyId, activeLayer));
         fitLabel(lbl);
         // the drawing's button takes the colour too
@@ -1540,6 +1552,7 @@
         const hasExt = extOnLayer(keyId, layer).some(([s]) => !s.startsWith('SCAN:'));
         const items = buildExtItems(keyId, layer);
         if (!hasExt) items.push({ label: 'Edit name…', action: () => startEditName(keyId, layer) });
+        items.push({ label: 'Icon and border…', action: () => openLook(keyId) });
         items.push(
             { label: isMod ? 'Unmark as modifier' : 'Mark as modifier',
               action: () => toggleModifierFlag(keyId) },
@@ -1602,6 +1615,7 @@
                 }
             });
         }
+        items.push({ sep: true }, { label: 'Icon and border…', action: () => openLook(keyId) });
         return items;
     }
 
@@ -1619,7 +1633,7 @@
     function resetKey(keyId) {
         const layer = currentLayerId();
         showConfirm('Reset key?',
-            'Clears name, color, and all profile assignments for this key in the current layer.',
+            'Clears name, colour, icon, border and all profile assignments for this key in the current layer.',
             () => {
                 if (state.keys[keyId] && state.keys[keyId].layers) {
                     delete state.keys[keyId].layers[layer];
@@ -1712,6 +1726,321 @@
         menu.style.top = Math.max(0, Math.min(y, window.innerHeight - menu.offsetHeight - 4)) + 'px';
     }
     function hideContextMenu() { document.getElementById('hkp-ctx-menu').classList.add('hkp-hidden'); }
+
+    // ---------------------------------------------------------------
+    // --Claude 2026-11-20: icons and borders, per key. A key keeps an icon - 'm:' menu picture, 'i:' item picture
+    // (icons/, built by tools/build_icons.py), 'l:' line icon (lineicons.js), 'u:' a picture of the user's own -
+    // and a border 'style:colour'. A mod's key keeps them with the mod's key (extCustom, like its colour), so
+    // they move with it; any other key keeps them on its layer. Borders are drawn by a layer under the text
+    // (.hkp-ring): box-shadows and gradients only, never a dash (Ultralight then draws every later SVG line dotted).
+    // ---------------------------------------------------------------
+    const ICONLIB = window.HKP_ICONLIB || { menus: [], items: [] };
+    const LINE = {};
+    (window.HKP_LINEICONS || []).forEach(l => { LINE[slugOf(l[0])] = l; });
+    const PIC = new Set(ICONLIB.menus.map(m => 'm:' + m[0]).concat(ICONLIB.items.map(i => 'i:' + i[0])));
+    let userIcons = [], userIconIdx = {};
+    function slugOf(s) { return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); }
+
+    function makeLookParts(ring) {
+        const d = document.createElement('div');
+        d.className = ring ? 'hkp-ring' : 'hkp-key-icon';
+        return d;
+    }
+    function iconInfo(ref) {
+        if (!ref || typeof ref !== 'string') return null;
+        const t = ref.slice(0, 2), id = ref.slice(2);
+        if (t === 'm:' && PIC.has(ref)) return { url: 'icons/menus/' + id + '.png' };
+        if (t === 'i:' && PIC.has(ref)) return { url: 'icons/items/' + id + '.png' };
+        if (t === 'l:' && LINE[id]) return { svg: LINE[id] };
+        if (t === 'u:' && userIconIdx[ref]) return { url: userIconIdx[ref].url };
+        return null;
+    }
+    // the icon's name and where it is, for the picker
+    function iconName(ref) {
+        if (!ref) return '';
+        const t = ref.slice(0, 2), id = ref.slice(2);
+        if (t === 'm:') { const m = ICONLIB.menus.find(x => x[0] === id); return m ? m[1] + ' (Menus)' : ''; }
+        if (t === 'i:') { const i = ICONLIB.items.find(x => x[0] === id); return i ? i[1] + ' (' + i[2] + ')' : ''; }
+        if (t === 'l:') return LINE[id] ? LINE[id][0] + ' (Line icons)' : '';
+        const u = userIconIdx[ref];
+        return u ? u.name + ' (' + u.group + ')' : '';
+    }
+    function paintIcon(box, ref) {
+        const info = iconInfo(ref);
+        const sig = info ? (info.url || ref) : '';
+        if (box._sig !== sig) {
+            box._sig = sig;
+            box.innerHTML = '';
+            box.style.backgroundImage = info && info.url ? 'url("' + info.url.replace(/"/g, '%22') + '")' : '';
+            if (info && info.svg) {
+                const vb = info.svg[1];
+                box.innerHTML = '<svg viewBox="0 0 ' + vb + ' ' + vb + '" fill="none" stroke="currentColor" stroke-width="' +
+                    (vb > 24 ? 3.2 : 1.6) + '" stroke-linejoin="round" stroke-linecap="round">' + info.svg[2] + '</svg>';
+            }
+        }
+        box.classList.toggle('hkp-icon-line', !!(info && info.svg));
+        return !!info;
+    }
+
+    const BORDERS = [['thin', 'Thin'], ['thick', 'Thick'], ['double', 'Double'], ['glow', 'Glow'], ['corners', 'Corners'],
+                     ['ornate', 'Ornate'], ['raised', 'Raised'], ['sunken', 'Sunken'], ['side', 'Side bar'], ['under', 'Underline']];
+    const RING_COLOURS = [['gold', '#d8b468', 'Gold'], ['silver', '#c9ced6', 'Silver'], ['bronze', '#b97d47', 'Bronze'],
+                          ['white', '#f3eee4', 'White'], ['red', '#e0533e', 'Red'], ['green', '#72c25c', 'Green'],
+                          ['blue', '#5aa2e6', 'Blue'], ['purple', '#ad7be6', 'Purple'], ['key', null, "The key's colour"]];
+    function splitBorder(b) {
+        if (!b || typeof b !== 'string') return null;
+        const i = b.indexOf(':'), s = i < 0 ? b : b.slice(0, i), c = i < 0 ? '' : b.slice(i + 1);
+        return BORDERS.some(x => x[0] === s) ? { s, c: c || 'gold' } : null;
+    }
+    function lighten(hex, k) {
+        const n = parseInt(String(hex).slice(1, 7), 16), f = v => v + (255 - v) * k;
+        return '#' + hex2(f((n >> 16) & 255)) + hex2(f((n >> 8) & 255)) + hex2(f(n & 255));
+    }
+    function ringCss(c, keyCol) {
+        const named = RING_COLOURS.find(x => x[0] === c);
+        if (named && named[1]) return named[1];
+        if (c === 'key') { const ci = colourInfo(keyCol); return ci ? lighten(ci.solid, 0.3) : RING_COLOURS[0][1]; }
+        const ci = colourInfo(c);
+        return ci ? ci.css : RING_COLOURS[0][1];
+    }
+    function paintRing(ring, border, keyCol) {
+        const b = splitBorder(border);
+        ring.className = 'hkp-ring' + (b ? ' hkp-ring-' + b.s : '');
+        if (b) ring.style.setProperty('--ring', ringCss(b.c, keyCol)); else ring.style.removeProperty('--ring');
+        return !!b;
+    }
+    function paintLook(el, keyData, keyCol) {
+        const ic = el.querySelector('.hkp-key-icon'), ring = el.querySelector('.hkp-ring');
+        const has = ic ? paintIcon(ic, keyData && keyData.icon) : false;
+        el.classList.toggle('hkp-has-icon', has);
+        if (ring) paintRing(ring, keyData && keyData.border, keyCol);
+    }
+
+    // where a key's icon and border are kept: its mods' keys when one of them is shown, else the key itself
+    function lookTargets(keyId, layer) {
+        const own = getKeyLayer(keyId, layer);
+        let ext = extOnLayer(keyId, layer);
+        if (own && own.label) ext = ext.filter(([s]) => !s.startsWith('SCAN:'));
+        return ext.map(([s]) => s);
+    }
+    function setLook(keyId, layer, icon, border) {
+        const srcs = lookTargets(keyId, layer);
+        if (srcs.length) {
+            srcs.forEach(src => {
+                const c = customFor(src, !!(icon || border));
+                if (!c) return;
+                if (icon) c.icon = icon; else delete c.icon;
+                if (border) c.border = border; else delete c.border;
+            });
+            // a name of the user's own may show instead later; it keeps nothing of its own then
+            const own = getKeyLayer(keyId, layer);
+            if (own) { delete own.icon; delete own.border; }
+        } else {
+            if (!icon && !border && !getKeyLayer(keyId, layer)) return;
+            ensureKeyLayer(keyId, layer);
+            const e = state.keys[keyId].layers[layer];
+            if (icon) e.icon = icon; else delete e.icon;
+            if (border) e.border = border; else delete e.border;
+        }
+        refreshAll(); save();
+    }
+
+    // Pictures of the user's own, sent by the game (from Data/SKSE/Plugins/HotkeyPanel/Icons; sub-folders = groups):
+    // [{ id: 'u:<folder/file>', name, group, url }]
+    function setUserIcons(list) {
+        userIcons = (Array.isArray(list) ? list : []).filter(u => u && u.id && u.url).map(u => {
+            const id = String(u.id).startsWith('u:') ? String(u.id) : 'u:' + u.id;
+            const file = id.slice(2).split('/').pop();
+            return { id, url: String(u.url), name: u.name || file.replace(/\.[^.]+$/, ''), group: u.group || 'Your icons' };
+        });
+        userIconIdx = {};
+        userIcons.forEach(u => { userIconIdx[u.id] = u; });
+        refreshAll();
+        if (look) { renderLookCats(); renderLookIcons(); renderLookPreview(); }
+    }
+
+    // ---- the picker (right-click a key > Icon and border...) ----
+    let look = null;   // { keyId, layer, icon, style, col, cat, q, hover }
+    const LOOK_CATS = [['all', 'All'], ['menus', 'Menus'], ['items', 'Items'], ['line', 'Line icons'], ['user', 'Your icons']];
+    function openLook(keyId) {
+        if (moveMode) exitMoveMode();
+        const layer = currentLayerId();
+        const kd = viewLayer(keyId, layer);
+        const b = splitBorder(kd && kd.border);
+        look = { keyId, layer, icon: (kd && kd.icon) || '', style: b ? b.s : '', col: b ? b.c : 'gold', cat: 'all', q: '', hover: '' };
+        const name = kd && kd.label ? kd.label : '';
+        document.getElementById('hkp-look-title').textContent = 'Icon and border  ·  ' + (KEY_CAPTION[keyId] || keyId) + (name ? '  ·  ' + name : '');
+        document.getElementById('hkp-look-search').value = '';
+        document.getElementById('hkp-modal-look').classList.remove('hkp-hidden');
+        renderLookCats(); renderLookIcons(); renderLookBorders(); renderLookPreview();
+        // only the icon list scrolls to the key's icon (scrollIntoView moved the whole box on a phone)
+        const grid = document.getElementById('hkp-look-icons'), sel = grid.querySelector('.hkp-look-cell.hkp-on');
+        grid.scrollTop = sel ? Math.max(0, sel.offsetTop - grid.clientHeight / 2 + sel.offsetHeight / 2) : 0;
+        document.querySelector('.hkp-look-box').scrollTop = 0;
+    }
+    function closeLook() {
+        look = null;
+        document.getElementById('hkp-modal-look').classList.add('hkp-hidden');
+        document.getElementById('hkp-look-preview').innerHTML = '';
+    }
+    function lookBorder() { return look.style ? look.style + ':' + look.col : ''; }
+    function lookKeyCol() { const kd = viewLayer(look.keyId, look.layer); return resolveColor(kd, state.activeProfile); }
+    function lookSave() {
+        if (!look) return;
+        const { keyId, layer, icon } = look, border = lookBorder();
+        closeLook();
+        setLook(keyId, layer, icon, border);
+    }
+    function lookClear() {
+        if (!look) return;
+        look.icon = ''; look.style = '';
+        renderLookIcons(); renderLookBorders(); renderLookPreview();
+    }
+    function lookCat(cat) { if (!look) return; look.cat = cat; renderLookCats(); renderLookIcons(); }
+    function lookSearch(q) { if (!look) return; look.q = String(q || ''); renderLookIcons(); }
+
+    function lookSections() {
+        const S = [{ cat: 'menus', title: 'Menus', items: ICONLIB.menus.map(m => ['m:' + m[0], m[1]]) }];
+        const add = (cat, title, ref, name) => {
+            let g = S.find(x => x.cat === cat && x.title === title);
+            if (!g) S.push(g = { cat, title, items: [] });
+            g.items.push([ref, name]);
+        };
+        ICONLIB.items.forEach(i => add('items', i[2], 'i:' + i[0], i[1]));
+        (window.HKP_LINEICONS || []).forEach(l => add('line', 'Line icons', 'l:' + slugOf(l[0]), l[0]));
+        userIcons.forEach(u => add('user', u.group, u.id, u.name));
+        return S;
+    }
+    function renderLookCats() {
+        const box = document.getElementById('hkp-look-cats');
+        box.innerHTML = '';
+        LOOK_CATS.forEach(([id, label]) => {
+            const b = document.createElement('button');
+            b.className = 'hkp-btn' + (look.cat === id ? ' hkp-on' : '');
+            b.textContent = id === 'user' && userIcons.length ? label + ' (' + userIcons.length + ')' : label;
+            b.onclick = () => lookCat(id);
+            box.appendChild(b);
+        });
+    }
+    function renderLookIcons() {
+        const grid = document.getElementById('hkp-look-icons');
+        grid.innerHTML = '';
+        const q = look.q.trim().toLowerCase();
+        if (!q) grid.appendChild(lookCell('', 'No icon'));
+        let shown = 0;
+        lookSections().forEach(sec => {
+            if (look.cat !== 'all' && sec.cat !== look.cat) return;
+            const items = q ? sec.items.filter(([, n]) => n.toLowerCase().includes(q) || sec.title.toLowerCase().includes(q)) : sec.items;
+            if (!items.length) return;
+            const h = document.createElement('div');
+            h.className = 'hkp-look-head';
+            h.textContent = sec.title;
+            grid.appendChild(h);
+            items.forEach(([ref, name]) => { grid.appendChild(lookCell(ref, name)); shown++; });
+        });
+        if (!shown) {
+            const n = document.createElement('div');
+            n.className = 'hkp-look-empty';
+            n.textContent = look.cat === 'user' && !userIcons.length
+                ? 'No pictures of your own yet. Put PNG, JPG or SVG files in Data\\SKSE\\Plugins\\HotkeyPanel\\Icons ' +
+                  '(with MO2: in a mod of their own). Folders in there become groups here. They show the next time the panel opens.'
+                : 'Nothing found.';
+            grid.appendChild(n);
+        }
+        lookStatus();
+    }
+    function lookCell(ref, name) {
+        const c = document.createElement('div');
+        c.className = 'hkp-look-cell' + (ref === look.icon ? ' hkp-on' : '') + (ref ? '' : ' hkp-look-none');
+        const ic = makeLookParts(false);
+        if (ref) paintIcon(ic, ref); else ic.textContent = 'None';
+        c.appendChild(ic);
+        c.onmouseenter = () => { look.hover = name; lookStatus(); };
+        c.onmouseleave = () => { look.hover = ''; lookStatus(); };
+        c.onclick = () => {
+            look.icon = ref;
+            document.querySelectorAll('#hkp-look-icons .hkp-look-cell').forEach(x => x.classList.toggle('hkp-on', x === c));
+            renderLookPreview(); lookStatus();
+        };
+        return c;
+    }
+    function renderLookBorders() {
+        const keyCol = lookKeyCol();
+        const box = document.getElementById('hkp-look-borders');
+        box.innerHTML = '';
+        [['', 'None']].concat(BORDERS).forEach(([s, n]) => {
+            const c = document.createElement('div');
+            c.className = 'hkp-look-bcell' + (s === look.style ? ' hkp-on' : '');
+            const ring = makeLookParts(true);
+            paintRing(ring, s ? s + ':' + look.col : '', keyCol);
+            const t = document.createElement('span');
+            t.textContent = n;
+            c.appendChild(ring); c.appendChild(t);
+            c.onclick = () => { look.style = s; renderLookBorders(); renderLookPreview(); };
+            box.appendChild(c);
+        });
+        const cols = document.getElementById('hkp-look-bcols');
+        cols.innerHTML = '';
+        const chip = (id, css, title) => {
+            const sw = document.createElement('div');
+            sw.className = 'hkp-swatch hkp-look-chip' + (look.col === id ? ' selected' : '');
+            swatchBg(sw, css);
+            sw.title = title;
+            sw.onmouseenter = () => { look.hover = title; lookStatus(); };
+            sw.onmouseleave = () => { look.hover = ''; lookStatus(); };
+            sw.onclick = () => { look.col = id; if (!look.style) look.style = 'thin'; renderLookBorders(); renderLookPreview(); };
+            cols.appendChild(sw);
+        };
+        RING_COLOURS.forEach(([id, hex, title]) => chip(id, hex || ringCss('key', keyCol), title));
+        swatchList().forEach((h, i) => chip(h, colourInfo(h).css, 'Saved colour ' + (i + 1)));
+        lookStatus();
+    }
+    function lookStatus() {
+        const el = document.getElementById('hkp-look-status');
+        if (!el || !look) return;
+        if (look.hover) { el.textContent = look.hover; return; }
+        const b = BORDERS.find(x => x[0] === look.style);
+        const named = RING_COLOURS.find(x => x[0] === look.col);
+        el.textContent = 'Icon: ' + (iconName(look.icon) || 'none') + '   ·   Border: ' +
+            (b ? b[1] + ', ' + (named ? named[2].toLowerCase() : 'saved colour') : 'none');
+    }
+    // the key itself, at the size it has on the panel, drawn bigger with the picked icon and border
+    function renderLookPreview() {
+        const host = document.getElementById('hkp-look-preview');
+        host.innerHTML = '';
+        if (!look) return;
+        const src = document.querySelector('.hkp-key[data-key-id="' + look.keyId + '"], .hkp-m-input[data-key-id="' + look.keyId + '"]');
+        if (!src || !src.offsetWidth) return;
+        if (mq && src.contains(mq.lbl)) stopMarquee();
+        // a tiny key (a phone) is laid out at least 64 px tall, same shape, so the icon has room to be seen
+        const g = Math.max(1, 64 / src.offsetHeight), w = Math.round(src.offsetWidth * g), h = Math.round(src.offsetHeight * g);
+        const s = Math.max(1, Math.min(2.6, 128 / h, 220 / w));
+        const k = src.cloneNode(true);
+        k.classList.remove('hkp-m-hot', 'hkp-dim');
+        k.removeAttribute('id');
+        Object.assign(k.style, { position: 'absolute', left: ((w * s - w) / 2) + 'px', top: ((h * s - h) / 2) + 'px',
+            width: w + 'px', height: h + 'px', margin: '0', transform: 'scale(' + s + ')', transformOrigin: '50% 50%', pointerEvents: 'none' });
+        host.style.width = Math.round(w * s) + 'px';
+        host.style.height = Math.round(h * s) + 'px';
+        host.appendChild(k);
+        const kd = viewLayer(look.keyId, look.layer);
+        paintLook(k, { icon: look.icon, border: lookBorder() }, resolveColor(kd, state.activeProfile));
+        const lbl = k.querySelector('.hkp-key-label, .hkp-m-label');
+        if (lbl) { lbl.classList.remove('hkp-run'); lbl.textContent = kd && kd.label ? kd.label : ''; fitLabel(lbl); }
+    }
+
+    // Settings > Key icons: with the name under them, or the icon alone (the info box still names the key)
+    function iconStyle() { return state.settings.iconStyle === 'only' ? 'only' : 'both'; }
+    function applyIconStyle() { document.body.classList.toggle('hkp-icon-only', iconStyle() === 'only'); }
+    function syncIconStyle() {
+        const a = document.getElementById('hkp-is-both'), b = document.getElementById('hkp-is-only');
+        if (a) a.classList.toggle('hkp-on', iconStyle() === 'both');
+        if (b) b.classList.toggle('hkp-on', iconStyle() === 'only');
+    }
+    function setIconStyle(v) {
+        state.settings.iconStyle = v === 'only' ? 'only' : 'both';
+        applyIconStyle(); syncIconStyle(); refitAll(); save();
+    }
 
     // ---------------------------------------------------------------
     // Color mode + swatches
@@ -1881,6 +2210,7 @@
         document.getElementById('hkp-scan-enabled').checked = state.settings.scanConfigs !== false;
         syncScanStatus();
         syncColorStyle();
+        syncIconStyle();
     }
     // --Claude 2026-11-20: Key colours = Fill (the whole key) or Dot (a dot in the corner of a plain key;
     // keeps the panel even and leaves room for icons). Stack cards go plain in Dot mode too.
@@ -2173,6 +2503,7 @@
                 // ESC/Tab cascade: close whatever is layered on top first.
                 if (pickModal) { closePickModal(); return; }
                 if (!document.getElementById('hkp-modal-color').classList.contains('hkp-hidden'))   { closeColourWheel(); return; }
+                if (look) { closeLook(); return; }
                 if (!document.getElementById('hkp-modal-confirm').classList.contains('hkp-hidden')) { confirmCancel(); return; }
                 if (!document.getElementById('hkp-modal-edit').classList.contains('hkp-hidden'))    { cancelEdit(); return; }
                 if (!document.getElementById('hkp-modal-profile').classList.contains('hkp-hidden')) { cancelProfile(); return; }
@@ -2539,10 +2870,14 @@
         // still count in conflicts and list in the key's menu); announced keys replace it as before.
         if (own && own.label) ext = ext.filter(([s]) => !s.startsWith('SCAN:'));
         if (!ext.length) return own;
-        // --Claude 2026-11-20: one name on the key (the first); every name is listed in the info box
+        // --Claude 2026-11-20: one name on the key (the first); every name is listed in the info box. Icon and
+        // border: the mod key's own (they move with it), else the ones set on the key itself.
+        const c0 = state.extCustom && state.extCustom[ext[0][0]];
         return {
             label: extShownLabel(ext[0][0], ext[0][1]),
             color: extColor(ext[0][0], ext[0][1]),
+            icon: (c0 && c0.icon) || (own && own.icon) || '',
+            border: (c0 && c0.border) || (own && own.border) || '',
             profiles: own && own.profiles,
             profileColors: own && own.profileColors
         };
@@ -2825,7 +3160,7 @@
                     }
                     if (!Object.keys(k.layers).length) delete state.keys[keyId];
                 }
-                renderSwatches(); applyColorStyle(); applyGeom(); renderProfiles(); refreshAll(); updateModifierBadge(); applyTapModeBg(); applyLabelSize(); applyPanelScale(); applyPanelOpacity(); applyFont(); syncFontButton(); updateSwatchBarLabel();
+                renderSwatches(); applyIconStyle(); applyColorStyle(); applyGeom(); renderProfiles(); refreshAll(); updateModifierBadge(); applyTapModeBg(); applyLabelSize(); applyPanelScale(); applyPanelOpacity(); applyFont(); syncFontButton(); updateSwatchBarLabel();
                 if (settingsOpen) syncSettingsInputs();
                 // Tell the DLL about the persisted toggle key so its input
                 // sink knows which key opens the panel. (Replaces what the old
@@ -2871,6 +3206,7 @@
         },
         toggleSettings, setToggleEnabled, startBindToggleKey, exitColorMode, cycleTapMode, setLabelSize, setColorStyle, resetGeom,
         openColourWheel, closeColourWheel, cwSave, cwUse, cwHexInput,
+        openLook, closeLook, lookSave, lookClear, lookCat, lookSearch, setIconStyle, setUserIcons,
         layout: () => layoutKeyboard(),
         setPanelScale, previewPanelScale, setPanelOpacity,
         setFonts, toggleFontDD, pickFont,
