@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Hotkey Panel</title>
-    <link rel="stylesheet" href="css/hkp.css?v=23">
+    <link rel="stylesheet" href="css/hkp.css?v=24">
 </head>
 <body>
 <div id="hkp-root" class="hkp-hidden">
@@ -14,7 +14,7 @@
 
         <!-- Keyboard: full width of main -->
         <div class="hkp-keyboard hkp-panel">
-            <div class="hkp-title hkp-kb-title">Hotkey Panel</div>
+            <div class="hkp-title hkp-kb-title" title="Drag to move the panel"><svg class="hkp-drag-glyph" viewBox="0 0 10 16" width="10" height="16"><circle cx="2.5" cy="3" r="1.4"/><circle cx="7.5" cy="3" r="1.4"/><circle cx="2.5" cy="8" r="1.4"/><circle cx="7.5" cy="8" r="1.4"/><circle cx="2.5" cy="13" r="1.4"/><circle cx="7.5" cy="13" r="1.4"/></svg>Hotkey Panel</div>
             <button class="hkp-topbar-btn hkp-close-btn hkp-kb-close" onclick="HKP.close(event)" title="Close">&times;</button>
             <div class="hkp-kb-main" id="hkp-kb-main"></div>
             <div class="hkp-kb-nav" id="hkp-kb-nav"></div>
@@ -61,6 +61,9 @@
             </div>
         </div>
     </main>
+
+    <!-- --Claude 2026-11-20: resize grip (drag = size, double press = default size and place) -->
+    <div id="hkp-grip" class="hkp-grip" title="Drag to resize - double-click: default size and place"><svg viewBox="0 0 16 16" width="16" height="16"><path d="M14.5 2.5L2.5 14.5M14.5 7L7 14.5M14.5 11.5L11.5 14.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></div>
 
     <!-- Context menu -->
     <div class="hkp-context-menu hkp-hidden" id="hkp-ctx-menu"></div>
@@ -232,14 +235,11 @@
             </div>
             <div class="hkp-setting-row" id="hkp-row-scale">
                 <div class="hkp-setting-label">
-                    Panel size
-                    <div class="hkp-setting-hint">Shrink the whole panel. 100% = full size; minimum is 1/8 (12%).</div>
+                    Panel place and size
+                    <div class="hkp-setting-hint">Drag the panel by its edge or its title to move it; drag the grip in the bottom-right corner to resize it. Double-click the grip (or Reset) for the default size and place.</div>
                 </div>
                 <div class="hkp-setting-control">
-                    <input type="range" id="hkp-panel-scale" min="12" max="100" step="1" value="100"
-                           oninput="HKP.previewPanelScale(this.value)"
-                           onchange="HKP.setPanelScale(this.value)">
-                    <span id="hkp-panel-scale-val" class="hkp-scale-val">100%</span>
+                    <button class="hkp-btn" onclick="HKP.resetGeom()">Reset</button>
                 </div>
             </div>
             <div class="hkp-setting-row" id="hkp-row-opacity">
@@ -277,6 +277,6 @@
 </div>
 
 <script src="js/gkeys.js?v=1"></script>
-<script src="js/hkp.js?v=26"></script>
+<script src="js/hkp.js?v=27"></script>
 </body>
 </html>

@@ -166,7 +166,8 @@
             remoteEnabled: false, // --Claude 2026-09-30: serve the panel to a tablet on the home network
             remotePort: 8950,
             scanConfigs: true,    // --Claude 2026-10-01: show mods' keys found in their config files
-            colorStyle: 'fill'    // --Claude 2026-11-20: 'fill' = the key takes its colour, 'dot' = a coloured dot on a plain key
+            colorStyle: 'fill',   // --Claude 2026-11-20: 'fill' = the key takes its colour, 'dot' = a coloured dot on a plain key
+            panelGeom: null       // --Claude 2026-11-20: {x, y, w, h} screen fractions after a move / resize; null = centred
         },
         swatches: null,   // --Claude 2026-11-20: the 26 saved colour squares ('#rrggbbaa'); null = the original palette
         profiles: [{ name: 'DEFAULT', system: true }],
@@ -224,6 +225,8 @@
         renderSwatches();
         attachGlobalHandlers();
         attachWheelHandlers();
+        wireGeom();
+        applyGeom();
         updateModifierBadge();
         applyTapModeBg();
         applyLabelSize();
@@ -512,6 +515,124 @@
         const hex = cwHex(), slot = cw.slot && swatchList()[cw.slot - 1] === hex ? cw.slot : -1;
         closeColourWheel();
         startColourMode(slot, hex);
+    }
+
+    // ---------------------------------------------------------------
+    // --Claude 2026-11-20: move the panel by its edge or its title, resize it from the corner grip (as in
+    // PEM). Saved as screen fractions in settings.panelGeom; null = centred at the old "Panel size". A resize
+    // shows an outline and lays the keys out once, on release; a double press on the grip = the default again.
+    // No transform on the panel (in PEM a transform made clicks land off). PrismaUI: mousemove carries no
+    // button state, so a drag runs from our mousedown to our mouseup; Unfocus sends a move to (0,0); the DLL
+    // calls hide() before Unfocus, and hide() drops a running drag.
+    // ---------------------------------------------------------------
+    const GEOM_MARGIN = 6, GEOM_MIN = [760, 420];
+    let geomDrag = null, gripDownAt = 0;
+    function geomDefault(W, H) {
+        const k = (Number(state.settings.panelScale) || 100) / 100, w = W * 0.92 * k, h = H * 0.94 * k;
+        return { x: (W - w) / 2, y: (H - h) / 2, w, h };
+    }
+    function geomClamp(g, W, H) {
+        const m = GEOM_MARGIN;
+        const w = Math.max(Math.min(GEOM_MIN[0], W - 2 * m), Math.min(g.w, W - 2 * m));
+        const h = Math.max(Math.min(GEOM_MIN[1], H - 2 * m), Math.min(g.h, H - 2 * m));
+        return { x: Math.min(Math.max(g.x, m), W - w - m), y: Math.min(Math.max(g.y, m), H - h - m), w, h };
+    }
+    function setRootRect(g) {
+        const s = document.getElementById('hkp-root').style;
+        s.left = Math.round(g.x) + 'px'; s.top = Math.round(g.y) + 'px';
+        s.width = Math.round(g.w) + 'px'; s.height = Math.round(g.h) + 'px';
+    }
+    function savedGeom() {
+        const g = state.settings.panelGeom;
+        return g && [g.x, g.y, g.w, g.h].every(v => typeof v === 'number' && isFinite(v)) && g.w > 0.05 && g.h > 0.05 ? g : null;
+    }
+    function applyGeom() {
+        if (REMOTE || geomDrag) return;
+        const W = window.innerWidth, H = window.innerHeight, f = savedGeom();
+        setRootRect(geomClamp(f ? { x: f.x * W, y: f.y * H, w: f.w * W, h: f.h * H } : geomDefault(W, H), W, H));
+    }
+    function resetGeom() {
+        state.settings.panelGeom = null;
+        applyGeom(); layoutKeyboard(); save();
+    }
+    const GEOM_HANDLES = ['hkp-main', 'hkp-bottom', 'hkp-keyboard', 'hkp-kb-main', 'hkp-kb-nav', 'hkp-kb-numpad',
+                          'hkp-row', 'hkp-row-gap', 'hkp-nav-empty', 'hkp-kb-title', 'hkp-drag-glyph'];
+    function isGeomHandle(el) {
+        if (!el || !el.closest) return false;
+        if (el.id === 'hkp-root') return true;
+        if (el.closest('.hkp-kb-title')) return true;
+        return GEOM_HANDLES.some(c => el.classList && el.classList.contains(c));
+    }
+    function wireGeom() {
+        if (REMOTE) return;
+        document.addEventListener('mousedown', (e) => {
+            if (geomDrag) endGeomDrag(false);   // its mouseup never came: back where it was
+            if (e.button !== 0 || !e.target || !e.target.closest || !e.target.closest('#hkp-root')) return;
+            if (e.target.closest('.hkp-modal, .hkp-settings-panel, .hkp-context-menu')) return;
+            if (e.target.closest('#hkp-grip')) {
+                e.preventDefault(); e.stopPropagation();
+                const now = Date.now();
+                if (now - gripDownAt < 400) { gripDownAt = 0; resetGeom(); return; }   // JS-timed double press
+                gripDownAt = now;
+                startGeomDrag('size', e);
+                return;
+            }
+            if (!isGeomHandle(e.target)) return;
+            startGeomDrag('move', e);
+        }, true);
+        document.addEventListener('mousemove', geomMove, true);
+        document.addEventListener('mouseup', (e) => { if (geomDrag && e.button === 0) endGeomDrag(true); }, true);
+        window.addEventListener('blur', () => endGeomDrag(false));
+        window.addEventListener('resize', applyGeom);
+    }
+    function startGeomDrag(kind, e) {
+        const r = document.getElementById('hkp-root').getBoundingClientRect();
+        geomDrag = { kind, sx: e.clientX, sy: e.clientY, g: { x: r.left, y: r.top, w: r.width, h: r.height }, moved: false, last: null };
+    }
+    function geomMove(e) {
+        const d = geomDrag;
+        if (!d) return;
+        if (e.clientX === 0 && e.clientY === 0) return;   // PrismaUI's Unfocus reset, not the user
+        const dx = e.clientX - d.sx, dy = e.clientY - d.sy;
+        if (!d.moved) {
+            if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;   // still a click
+            d.moved = true;
+            if (d.kind === 'size') gripDownAt = 0;
+            document.body.classList.add(d.kind === 'move' ? 'hkp-dragging' : 'hkp-resizing');
+            hideContextMenu(); hideTooltip();
+        }
+        const W = window.innerWidth, H = window.innerHeight;
+        if (d.kind === 'move') {
+            d.last = geomClamp({ x: d.g.x + dx, y: d.g.y + dy, w: d.g.w, h: d.g.h }, W, H);
+            setRootRect(d.last);
+        } else {
+            // the top-left corner stays; the size runs from the minimum to the screen edge
+            const m = GEOM_MARGIN, maxW = W - d.g.x - m, maxH = H - d.g.y - m;
+            d.last = { x: d.g.x, y: d.g.y,
+                       w: Math.max(Math.min(GEOM_MIN[0], maxW), Math.min(d.g.w + dx, maxW)),
+                       h: Math.max(Math.min(GEOM_MIN[1], maxH), Math.min(d.g.h + dy, maxH)) };
+            let gh = document.getElementById('hkp-geom-ghost');
+            if (!gh) { gh = document.createElement('div'); gh.id = 'hkp-geom-ghost'; document.body.appendChild(gh); }
+            gh.style.left = Math.round(d.last.x) + 'px'; gh.style.top = Math.round(d.last.y) + 'px';
+            gh.style.width = Math.round(d.last.w) + 'px'; gh.style.height = Math.round(d.last.h) + 'px';
+            gh.style.display = 'block';
+        }
+    }
+    // commit = a real mouseup: keep and save the new place. Anything else puts the panel back.
+    function endGeomDrag(commit) {
+        const d = geomDrag;
+        if (!d) return;
+        geomDrag = null;
+        document.body.classList.remove('hkp-dragging', 'hkp-resizing');
+        const gh = document.getElementById('hkp-geom-ghost');
+        if (gh) gh.style.display = 'none';
+        if (!d.moved) return;   // a plain click on the edge or the grip
+        if (!commit || !d.last) { applyGeom(); return; }
+        const W = window.innerWidth, H = window.innerHeight, g = d.last;
+        setRootRect(g);
+        state.settings.panelGeom = { x: +(g.x / W).toFixed(4), y: +(g.y / H).toFixed(4), w: +(g.w / W).toFixed(4), h: +(g.h / H).toFixed(4) };
+        if (d.kind === 'size') layoutKeyboard();
+        save();
     }
     let stackStep = 4;
     function escHtml(s) {
@@ -1709,8 +1830,7 @@
         document.getElementById('hkp-label-size').value = sz;
         document.getElementById('hkp-label-size-val').textContent = sz;
         const ps = Number(state.settings.panelScale) || 100;
-        document.getElementById('hkp-panel-scale').value = ps;
-        document.getElementById('hkp-panel-scale-val').textContent = ps + '%';
+        void ps;
         const po = Number(state.settings.panelOpacity) || 100;
         document.getElementById('hkp-panel-opacity').value = po;
         document.getElementById('hkp-panel-opacity-val').textContent = po + '%';
@@ -2565,7 +2685,7 @@
                     }
                     if (!Object.keys(k.layers).length) delete state.keys[keyId];
                 }
-                renderSwatches(); applyColorStyle(); renderProfiles(); refreshAll(); updateModifierBadge(); applyTapModeBg(); applyLabelSize(); applyPanelScale(); applyPanelOpacity(); applyFont(); syncFontButton(); updateSwatchBarLabel();
+                renderSwatches(); applyColorStyle(); applyGeom(); renderProfiles(); refreshAll(); updateModifierBadge(); applyTapModeBg(); applyLabelSize(); applyPanelScale(); applyPanelOpacity(); applyFont(); syncFontButton(); updateSwatchBarLabel();
                 if (settingsOpen) syncSettingsInputs();
                 // Tell the DLL about the persisted toggle key so its input
                 // sink knows which key opens the panel. (Replaces what the old
@@ -2574,11 +2694,14 @@
             } catch (err) { console.error('HKP.loadState failed', err); }
         },
         show() {
+            endGeomDrag(false);
+            applyGeom();
             document.getElementById('hkp-root').classList.remove('hkp-hidden');
             // Wait one frame so layout is final, then size keys to container.
             requestAnimationFrame(() => layoutKeyboard());
         },
         hide() {
+            endGeomDrag(false);
             document.getElementById('hkp-root').classList.add('hkp-hidden');
             if (pick) endPick();
             hideContextMenu(); hideTooltip();
@@ -2606,7 +2729,7 @@
                 self.hide();
             });
         },
-        toggleSettings, setToggleEnabled, startBindToggleKey, exitColorMode, cycleTapMode, setLabelSize, setColorStyle,
+        toggleSettings, setToggleEnabled, startBindToggleKey, exitColorMode, cycleTapMode, setLabelSize, setColorStyle, resetGeom,
         openColourWheel, closeColourWheel, cwSave, cwUse, cwHexInput,
         layout: () => layoutKeyboard(),
         setPanelScale, previewPanelScale, setPanelOpacity,
