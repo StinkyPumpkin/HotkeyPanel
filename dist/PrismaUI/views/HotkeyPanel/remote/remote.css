@@ -84,13 +84,61 @@ input, textarea {
 /* Folded sections (top-bar buttons, remembered on this device). The colour bar stays up while
    colour mode is on, since that is where it ends. */
 body.hkp-r-no-swatches .hkp-swatch-bar:not(.hkp-active) { display: none !important; }
-/* --Claude 2026-11-20: the top bar (Settings, these fold buttons) now lives in the bottom row, so folding
-   "Mouse & profiles" keeps that row as one thin strip with only the controls in it */
-body.hkp-r-no-bottom .hkp-bottom { flex: 0 0 auto !important; }
-body.hkp-r-no-bottom .hkp-bottom > :not(.hkp-side) { display: none !important; }
-body.hkp-r-no-bottom .hkp-side { flex: 1 1 auto !important; flex-direction: row !important; align-items: center; gap: 14px; }
-body.hkp-r-no-bottom .hkp-side .hkp-topbar { flex: 1 1 auto; }
-body.hkp-r-no-bottom .hkp-side .hkp-swatch-bar { flex: 0 1 auto; }
+/* --Claude 2026-11-20: the tablet's bottom section, new design. The controls (layer, tap mode, these fold
+   buttons, connection, full screen, Settings) are ONE strip along the bottom, the same with "Mouse & profiles"
+   folded or not; above it sit profiles | G-keys | mouse | colours. The game's right-hand column (.hkp-side)
+   is dissolved (display: contents) so its two parts can take those places in a grid. The info box follows
+   the mouse pointer, which a touch screen does not have: its room goes to the others. */
+.hkp-bottom {
+    display: grid !important;
+    grid-template-columns: auto auto auto minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 10px 12px !important;
+}
+.hkp-bottom > .hkp-sidebar   { grid-area: 1 / 1; }
+.hkp-bottom > .hkp-gkeys     { grid-area: 1 / 2; }
+.hkp-bottom > .hkp-mouse-wrap { grid-area: 1 / 3; }
+.hkp-info { display: none !important; }
+.hkp-side { display: contents !important; }
+.hkp-side .hkp-swatch-bar {
+    grid-area: 1 / 4; min-width: 0; overflow-y: auto; padding: 8px 10px !important;
+    background: rgba(17, 15, 12, 0.88) !important; border: 1px solid var(--hkp-border) !important;
+}
+.hkp-side .hkp-swatches { grid-template-columns: repeat(auto-fill, minmax(30px, 1fr)) !important; }
+.hkp-side .hkp-topbar {
+    grid-area: 2 / 1 / 3 / -1; flex-wrap: wrap !important; align-items: center; gap: 8px !important;
+    padding: 6px 10px !important; background: rgba(17, 15, 12, 0.88) !important; border: 1px solid var(--hkp-border) !important;
+}
+.hkp-side .hkp-active-modifiers { flex: 0 1 auto !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hkp-side .hkp-topbar .hkp-topbar-btn { flex: 0 1 auto !important; white-space: nowrap; padding: 0 16px; }
+.hkp-side .hkp-topbar .hkp-r-conn { margin: 0 auto 0 6px; }
+/* a finger needs bigger targets than the game's 28 px buttons */
+.hkp-side .hkp-topbar-btn, .hkp-side .hkp-active-modifiers, .hkp-side .hkp-swatch-exit, .hkp-side .hkp-btn { height: 38px; font-size: 13px; }
+
+/* the panel is the whole screen here: nothing to resize */
+#hkp-grip { display: none !important; }
+
+/* Held upright (remote.js sets hkp-r-portrait): the arrows and numpad go under the main keys, on the
+   right as on a real keyboard, so the keys get the width of 15 instead of 22. The title would sit on
+   F9-F12. Below: profiles | G-keys | mouse, the colours under them, then the strip. */
+body.hkp-r-portrait .hkp-keyboard { flex-wrap: wrap; row-gap: 12px; justify-content: flex-end; }
+body.hkp-r-portrait .hkp-kb-main { flex: 0 0 100%; }
+body.hkp-r-portrait .hkp-kb-title { display: none !important; }
+body.hkp-r-portrait .hkp-bottom { grid-template-columns: auto auto minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto auto; }
+body.hkp-r-portrait .hkp-bottom > .hkp-mouse-wrap { grid-area: 1 / 3; }
+body.hkp-r-portrait .hkp-side .hkp-swatch-bar { grid-area: 2 / 1 / 3 / -1; }
+body.hkp-r-portrait .hkp-side .hkp-topbar { grid-area: 3 / 1 / 4 / -1; }
+
+/* "Mouse & profiles" folded: the strip alone (and the colours as one row above it, when shown) */
+body.hkp-r-no-bottom .hkp-bottom { flex: 0 0 auto !important; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto; }
+body.hkp-r-no-bottom .hkp-bottom > .hkp-sidebar,
+body.hkp-r-no-bottom .hkp-bottom > .hkp-gkeys,
+body.hkp-r-no-bottom .hkp-bottom > .hkp-mouse-wrap { display: none !important; }
+body.hkp-r-no-bottom .hkp-side .hkp-swatch-bar { grid-area: 1 / 1; flex-direction: row !important; align-items: center; overflow: visible; }
+body.hkp-r-no-bottom .hkp-side .hkp-swatch-bar .hkp-swatches { flex: 1 1 auto; }
+body.hkp-r-no-bottom .hkp-side .hkp-topbar { grid-area: 2 / 1; }
+body.hkp-r-no-bottom.hkp-r-no-swatches:not(.hkp-color-mode) .hkp-bottom { grid-template-rows: auto; }
+body.hkp-r-no-bottom.hkp-r-no-swatches:not(.hkp-color-mode) .hkp-side .hkp-topbar { grid-area: 1 / 1; }
 .hkp-topbar-btn.hkp-r-on { border-color: var(--hkp-gold) !important; color: var(--hkp-gold-hi) !important; }
 
 /* Labels shrink to fit (remote.js) instead of breaking words; only a label that still does not

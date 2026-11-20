@@ -188,7 +188,13 @@
     // ---------------------------------------------------------------
     // Top bar: fold buttons, connection dot, full screen
     // ---------------------------------------------------------------
+    // --Claude 2026-11-20: held upright, the arrows and numpad go under the main keys (remote.css)
+    function syncOrientation() {
+        document.body.classList.toggle('hkp-r-portrait', window.innerHeight > window.innerWidth * 1.05);
+    }
+
     function relayout() {
+        syncOrientation();
         if (window.HKP.layout) window.HKP.layout();
         window.HKP_REMOTE_LABEL.fit();
     }
@@ -389,7 +395,8 @@
         document.querySelectorAll('.hkp-keyboard, #hkp-mouse-stage').forEach((el) =>
             watch.observe(el, { childList: true, subtree: true, characterData: true }));
         // Rotating the tablet: re-fit the keys (HKP.show re-runs the layout).
-        window.addEventListener('resize', () => { if (shown) { window.HKP.show(); relayout(); } });
+        window.addEventListener('resize', () => { syncOrientation(); if (shown) { window.HKP.show(); relayout(); } });
+        syncOrientation();
         relayout();
     });
 })();

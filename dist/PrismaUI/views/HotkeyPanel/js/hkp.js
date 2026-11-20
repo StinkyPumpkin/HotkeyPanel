@@ -274,14 +274,21 @@
         const mainInner = main.clientHeight - mainPadY - gap;
         // --Claude 2026-11-20: a big panel (4K, or resized to the whole screen) gave the bottom row a third of
         // the height; now it keeps about a quarter and the keys take the rest (up to 1.6x as tall as wide)
-        const kbMaxH = mainInner - Math.max(230, mainInner * 0.25);
+        // (the tablet's bottom section also holds the control strip: a little more room)
+        const kbMaxH = mainInner - (REMOTE ? Math.max(290, mainInner * 0.32) : Math.max(230, mainInner * 0.25));
         const kbPadY = parseFloat(kbCs.paddingTop) + parseFloat(kbCs.paddingBottom);
         const availH = kbMaxH - kbPadY;
-        const uW = Math.floor((availW - 108) / 22);
-        const uH = Math.floor((availH - 20) / 6);
-        const u = Math.max(40, Math.min(180, Math.min(uW, uH)));
+        // --Claude 2026-11-20: a tablet held upright puts the arrows and numpad under the main keys
+        // (remote.css), so the width holds 15 keys instead of 22, and the height 12 rows instead of 6
+        const portrait = REMOTE && document.body.classList.contains('hkp-r-portrait');
+        const ROWS_GAP = portrait ? 52 : 20;   // gaps between key rows (and the two blocks) in px
+        const uW = portrait ? Math.floor((availW - 64) / 15) : Math.floor((availW - 108) / 22);
+        const uH = Math.floor((availH - ROWS_GAP) / (portrait ? 12 : 6));
+        // (a phone gets small keys rather than a keyboard running off the screen)
+        const u = Math.max(REMOTE ? 16 : 40, Math.min(180, Math.min(uW, uH)));
         document.documentElement.style.setProperty('--hkp-u', u + 'px');
-        let keyH = REMOTE ? u : Math.max(u, Math.min(uH, Math.round(u * 1.6)));
+        // --Claude 2026-11-20: the tablet gets the same tall keys and short bottom row as the game
+        let keyH = Math.max(u, Math.min(uH, Math.round(u * 1.6)));
         stackStep = Math.max(3, Math.min(8, Math.round(u / 18)));
         // --Claude 2026-09-30: on a tablet with the mouse & profiles section folded away the
         // keyboard has the whole height, but a landscape screen keeps the keys width-bound, so
@@ -289,17 +296,20 @@
         if (REMOTE && document.body.classList.contains('hkp-r-no-bottom')) {
             let used = 0;
             for (const c of main.children) {
-                if (c !== kb && c.offsetParent !== null) used += c.offsetHeight + gap + parseFloat(getComputedStyle(c).marginBottom || 0);
+                // HTML blocks only: the profile outline's <svg> lies over the keys and has no offsetHeight (NaN)
+                if (c !== kb && c instanceof HTMLElement && c.offsetParent !== null && getComputedStyle(c).position !== 'absolute')
+                    used += c.offsetHeight + gap + parseFloat(getComputedStyle(c).marginBottom || 0);
             }
             const fullH = main.clientHeight - mainPadY - used - kbPadY;
-            keyH = Math.max(u, Math.min(Math.floor((fullH - 20) / 6), Math.floor(u * 2.5)));
+            keyH = Math.max(u, Math.min(Math.floor((fullH - ROWS_GAP) / (portrait ? 12 : 6)), Math.floor(u * 2.5)));
         }
         document.documentElement.style.setProperty('--hkp-key-h', keyH + 'px');
         // the mouse block keeps its shape (width from the row's height), so the drawing and its lines stay
         // as laid out instead of a narrow, tall column whose lines fan out and cross
         const bottom = document.querySelector('.hkp-bottom'), mw = document.querySelector('.hkp-mouse-wrap');
-        if (bottom && mw && !REMOTE) {
-            const bh = bottom.clientHeight;
+        if (bottom && mw) {
+            // the tablet's section has the control strip under the mouse: the mouse's own row height counts
+            const bh = REMOTE ? mw.clientHeight : bottom.clientHeight;
             mw.style.width = Math.round(Math.max(380, Math.min(bh * 2.0, bottom.clientWidth * 0.46))) + 'px';
         }
         refitAll();
@@ -1000,7 +1010,7 @@
     function drawMouseLines() {
         const stage = document.getElementById('hkp-mouse-stage');
         const pic = stage && stage.querySelector('.hkp-mouse-svg');
-        if (!pic || REMOTE || !stage.offsetWidth) return;
+        if (!pic || !stage.offsetWidth) return;
         let svg = document.getElementById('hkp-mouse-lines');
         if (!svg) {
             svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -1139,7 +1149,7 @@
     // of the keys' cells (each grown by half the key gap so neighbours touch), on an SVG over the panel.
     function drawGroupOutline() {
         const main = document.querySelector('.hkp-main');
-        if (!main || REMOTE) return;
+        if (!main) return;
         let svg = document.getElementById('hkp-group-svg');
         if (!svg) {
             svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -1223,7 +1233,7 @@
         if (keyData && keyData.label) { lbl.textContent = keyData.label; lbl.classList.remove('hkp-empty'); }
         else { lbl.textContent = ''; lbl.classList.add('hkp-empty'); }
         paintKeyColour(el, resolveColor(keyData, activeProf), dim);
-        if (!REMOTE) applyStack(el, otherLayers(keyId, activeLayer));
+        applyStack(el, otherLayers(keyId, activeLayer));
         fitLabel(lbl);
     }
 
@@ -1259,7 +1269,7 @@
         else { lbl.textContent = ''; lbl.classList.add('hkp-empty'); }
 
         const ci = paintKeyColour(el, resolveColor(keyData, activeProf), dim);
-        if (!REMOTE) applyStack(el, otherLayers(keyId, activeLayer));
+        applyStack(el, otherLayers(keyId, activeLayer));
         fitLabel(lbl);
         // the drawing's button takes the colour too
         const z = document.querySelector('.hkp-mouse-svg [data-mz="' + keyId + '"]');
