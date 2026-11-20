@@ -64,8 +64,10 @@ class HotkeyPanelEditor(mobase.IPluginTool):
             try:
                 if not (int(ml.state(name)) & int(mobase.ModState.ACTIVE)):
                     continue
+                if name.lower().endswith('_separator'):
+                    continue
                 mod = ml.getMod(name)
-                if mod is not None and not mod.isSeparator():
+                if mod is not None:
                     out.append(mod.absolutePath())
             except Exception:
                 continue
