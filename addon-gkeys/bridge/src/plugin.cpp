@@ -68,10 +68,25 @@ bool                                  g_stuckLogged[12] = {};
 bool                                  g_gateSwallowLogged[12] = {};
 std::chrono::steady_clock::time_point g_pressAt[12];
 
+bool g_stuckTypingLogged = false;
+
 bool TextEntryActive()
 {
     auto* cm = RE::ControlMap::GetSingleton();
-    return cm && cm->GetRuntimeData().textEntryCount > 0;   // CommonLib NG 9: SE/AE/VR layouts behind accessors
+    if (!cm || cm->GetRuntimeData().textEntryCount <= 0) {   // CommonLib NG 9: SE/AE/VR layouts behind accessors
+        g_stuckTypingLogged = false;
+        return false;
+    }
+    // --Claude 2026-11-21: Skyrim's typing flag can stay on after the text box is gone (seen after the main menu's
+    // Bethesda.net login box closed), and then every G-key was held back for the rest of the session. A text box
+    // needs a menu, so outside menus the flag is ignored.
+    auto* ui = RE::UI::GetSingleton();
+    if (ui && (ui->GameIsPaused() || ui->IsShowingMenus() || ui->IsMenuOpen(RE::Console::MENU_NAME))) return true;
+    if (!g_stuckTypingLogged) {
+        g_stuckTypingLogged = true;
+        SKSE::log::info("GKeys: Skyrim's typing flag is on with no menu open - ignored (left over from a closed text box)");
+    }
+    return false;
 }
 
 // --Claude 2026-09-05: GetActiveWindow() is THREAD-LOCAL (the active window attached to the

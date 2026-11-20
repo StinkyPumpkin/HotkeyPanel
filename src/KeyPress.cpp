@@ -97,12 +97,15 @@ namespace {
 
     // -1 unknown / 0 no / 1 yes. Written on the main thread, read by the worker.
     std::atomic<int> g_liveProbe{ -1 };
-    // the key map's top context when the last probe ran (logged with the fire: 0 = gameplay)
+    // the key map's top context when the last probe ran (logged with the fire: 0 = gameplay), and Skyrim's typing
+    // flag (--Claude 2026-11-21: a flag left on after a closed text box made the game ignore a fired key)
     std::atomic<int> g_contextTop{ -1 };
+    std::atomic<int> g_typing{ -1 };
 
     int ContextTop() {
         auto* cm = RE::ControlMap::GetSingleton();
         if (!cm) return -1;
+        g_typing.store(cm->GetRuntimeData().textEntryCount, std::memory_order_relaxed);
         const auto& stack = cm->GetRuntimeData().contextPriorityStack;
         return stack.empty() ? -1 : static_cast<int>(stack.back());
     }
@@ -138,8 +141,10 @@ namespace {
             SKSE::log::warn("KeyPress: input still not live after {} ms, dropping the press", waitedMs);
             return;
         }
-        SKSE::log::info("KeyPress: input live after {} ms (key map context {}), firing", waitedMs,
-                        g_contextTop.load(std::memory_order_relaxed));
+        const int typing = g_typing.load(std::memory_order_relaxed);
+        SKSE::log::info("KeyPress: input live after {} ms (key map context {}, typing flag {}), firing{}", waitedMs,
+                        g_contextTop.load(std::memory_order_relaxed), typing,
+                        typing > 0 ? " - Skyrim thinks a text box is in use, so the game may ignore this key" : "");
 
         for (const auto& e : *a_script) {
             if (e.delayMs > 0) {
