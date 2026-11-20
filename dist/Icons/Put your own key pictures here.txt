@@ -5,8 +5,9 @@ right-click a key > Icon and border > Your icons, the next time the panel opens.
 
 - Any file name works: the name without its ending is the picture's name in the list ("Bow Combo.png" = Bow Combo).
 - Folders inside Icons become groups in the list (Icons\Combat\..., Icons\Magic\...).
-- Square pictures with a see-through background look best; about 128 to 256 pixels is plenty.
-- Up to 2 MB a picture and 400 pictures.
+- Square pictures with a see-through background look best; 256 pixels is plenty.
+- Any size works: a picture bigger than 256 pixels is shrunk to 256 for the panel (your file stays as it is).
+  Up to 16 MB a file and 400 pictures.
 - A key remembers its picture by folder and file name: rename or move a picture and the key forgets it.
 
 With Mod Organizer 2: best keep your pictures in a mod of their own (a folder named Icons at the top of that

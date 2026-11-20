@@ -2904,7 +2904,7 @@
             profileColors: own && own.profileColors
         };
     }
-    // "PEM:outfit:3" -> "PEM"; "MCM:SexLab:Hotkeys:12" -> "SexLab"
+    // "PEM:outfit:3" -> "PEM"; "MCM:SkyUI:Hotkeys:12" -> "SkyUI"
     function mcmName(src) {
         const parts = src.slice(4).split(':');
         return parts.length > 2 ? parts.slice(0, -2).join(':') : parts[0];

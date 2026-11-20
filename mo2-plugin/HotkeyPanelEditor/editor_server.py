@@ -204,7 +204,7 @@ def user_icon_files(dirs):
                 subdirs[:] = []
             for n in names:
                 real = os.path.join(cur, n)
-                if os.path.splitext(n)[1].lower() in PICTURES and 0 < os.path.getsize(real) <= 2 * 1024 * 1024:
+                if os.path.splitext(n)[1].lower() in PICTURES and 0 < os.path.getsize(real) <= 16 * 1024 * 1024:
                     out[os.path.relpath(real, root).replace(os.sep, '/')] = real
     return out
 

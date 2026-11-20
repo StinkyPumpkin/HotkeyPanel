@@ -4,15 +4,28 @@
 #include <cctype>
 #include <cstdio>
 #include <fstream>
+#include <map>
+#include <mutex>
 #include <sstream>
 #include <system_error>
 #include <vector>
+
+#include <Windows.h>
+#include <wincodec.h>
+#include <wrl/client.h>
+#pragma comment(lib, "windowscodecs.lib")
+#pragma comment(lib, "ole32.lib")
 
 namespace fs = std::filesystem;
 
 namespace
 {
-    constexpr std::uintmax_t kMaxFile = 2u * 1024 * 1024;     // a bigger picture is skipped (a key icon needs far less)
+    // --Claude 2026-11-20: a picture bigger than 256 px on a side is sent
+    // shrunk to 256 (same shape, PNG), so a 1024 px picture costs the panel a sixteenth. The file itself is never
+    // changed. Windows' own picture codecs (WIC) do it; SVG (drawn, any size is sharp) goes as it is.
+    constexpr UINT kSide = 256;
+    constexpr std::uintmax_t kMaxSource = 16u * 1024 * 1024;   // a bigger file is skipped
+    constexpr std::uintmax_t kMaxFile = 2u * 1024 * 1024;      // sent as it is (not shrunk): at most this big
     constexpr std::size_t kMaxFiles = 400;
     constexpr std::uintmax_t kMaxTotal = 24u * 1024 * 1024;   // all pictures together, in game
     constexpr int kMaxDepth = 3;
@@ -99,6 +112,60 @@ namespace
         return true;
     }
 
+    enum class Shrunk { kDone, kFits, kFailed };
+
+    // The picture at most kSide x kSide (same shape), as PNG bytes. kFits = already small enough, kFailed = Windows
+    // has no codec for it (SVG, a WEBP without the codec) or the file is broken.
+    Shrunk ShrinkPicture(const fs::path& a_path, std::string& a_png)
+    {
+        using Microsoft::WRL::ComPtr;
+        const HRESULT co = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        struct CoGuard { bool on; ~CoGuard() { if (on) CoUninitialize(); } } guard{ SUCCEEDED(co) };
+        ComPtr<IWICImagingFactory> f;
+        if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&f)))) return Shrunk::kFailed;
+        ComPtr<IWICBitmapDecoder> dec;
+        if (FAILED(f->CreateDecoderFromFilename(a_path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &dec)))
+            return Shrunk::kFailed;
+        ComPtr<IWICBitmapFrameDecode> frame;
+        UINT w = 0, h = 0;
+        if (FAILED(dec->GetFrame(0, &frame)) || FAILED(frame->GetSize(&w, &h)) || !w || !h) return Shrunk::kFailed;
+        if (w <= kSide && h <= kSide) return Shrunk::kFits;
+        const UINT nw = w >= h ? kSide : std::max<UINT>(1, static_cast<UINT>(static_cast<unsigned long long>(w) * kSide / h));
+        const UINT nh = h >= w ? kSide : std::max<UINT>(1, static_cast<UINT>(static_cast<unsigned long long>(h) * kSide / w));
+        ComPtr<IWICFormatConverter> conv;
+        ComPtr<IWICBitmapScaler> scaler;
+        if (FAILED(f->CreateFormatConverter(&conv)) ||
+            FAILED(conv->Initialize(frame.Get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone, nullptr, 0, WICBitmapPaletteTypeCustom)) ||
+            FAILED(f->CreateBitmapScaler(&scaler)) ||
+            FAILED(scaler->Initialize(conv.Get(), nw, nh, WICBitmapInterpolationModeHighQualityCubic)))
+            return Shrunk::kFailed;
+        ComPtr<IWICFormatConverter> out;   // back to straight alpha for the PNG
+        if (FAILED(f->CreateFormatConverter(&out)) ||
+            FAILED(out->Initialize(scaler.Get(), GUID_WICPixelFormat32bppBGRA, WICBitmapDitherTypeNone, nullptr, 0, WICBitmapPaletteTypeCustom)))
+            return Shrunk::kFailed;
+        ComPtr<IStream> stream;
+        ComPtr<IWICBitmapEncoder> enc;
+        ComPtr<IWICBitmapFrameEncode> fe;
+        ComPtr<IPropertyBag2> props;
+        WICPixelFormatGUID pf = GUID_WICPixelFormat32bppBGRA;
+        if (FAILED(CreateStreamOnHGlobal(nullptr, TRUE, &stream)) ||
+            FAILED(f->CreateEncoder(GUID_ContainerFormatPng, nullptr, &enc)) ||
+            FAILED(enc->Initialize(stream.Get(), WICBitmapEncoderNoCache)) ||
+            FAILED(enc->CreateNewFrame(&fe, &props)) || FAILED(fe->Initialize(props.Get())) ||
+            FAILED(fe->SetSize(nw, nh)) || FAILED(fe->SetPixelFormat(&pf)) ||
+            FAILED(fe->WriteSource(out.Get(), nullptr)) || FAILED(fe->Commit()) || FAILED(enc->Commit()))
+            return Shrunk::kFailed;
+        HGLOBAL mem = nullptr;
+        if (FAILED(GetHGlobalFromStream(stream.Get(), &mem)) || !mem) return Shrunk::kFailed;
+        STATSTG st{};
+        if (FAILED(stream->Stat(&st, STATFLAG_NONAME))) return Shrunk::kFailed;
+        const auto* p = static_cast<const char*>(GlobalLock(mem));
+        if (!p) return Shrunk::kFailed;
+        a_png.assign(p, static_cast<std::size_t>(st.cbSize.QuadPart));
+        GlobalUnlock(mem);
+        return Shrunk::kDone;
+    }
+
     struct Item
     {
         std::string rel;      // "Combat/sword.png"
@@ -106,6 +173,43 @@ namespace
         std::uintmax_t size;
         long long   time;
     };
+
+    // What gets sent for a picture (shrunk when big), kept until the file changes: the tablet asks for each picture
+    // again on every page load, and the game rebuilds its list when anything in the folder changes.
+    struct Loaded { std::uintmax_t size; long long time; std::string data; std::string mime; };
+    std::mutex g_cacheMx;
+    std::map<std::string, Loaded> g_cache;
+
+    bool Load(const Item& a_item, std::string& a_data, std::string& a_mime)
+    {
+        {
+            std::lock_guard lk(g_cacheMx);
+            const auto it = g_cache.find(a_item.rel);
+            if (it != g_cache.end() && it->second.size == a_item.size && it->second.time == a_item.time) {
+                a_data = it->second.data;
+                a_mime = it->second.mime;
+                return true;
+            }
+        }
+        const char* mime = MimeOf(a_item.path);
+        if (!mime) return false;
+        std::string data;
+        const Shrunk s = std::string_view(mime) == "image/svg+xml" ? Shrunk::kFailed : ShrinkPicture(a_item.path, data);
+        if (s == Shrunk::kDone) {
+            mime = "image/png";
+        } else {
+            if (a_item.size > kMaxFile) {
+                SKSE::log::warn("UserIcons: {} skipped - over 2 MB and Windows could not shrink it", a_item.rel);
+                return false;
+            }
+            if (!ReadAll(a_item.path, data)) return false;
+        }
+        a_data = data;
+        a_mime = mime;
+        std::lock_guard lk(g_cacheMx);
+        g_cache[a_item.rel] = { a_item.size, a_item.time, std::move(data), mime };
+        return true;
+    }
 
     std::vector<Item> List()
     {
@@ -120,8 +224,8 @@ namespace
             if (!it->is_regular_file(e2) || !MimeOf(it->path())) continue;
             const auto size = it->file_size(e2);
             if (e2) continue;
-            if (size == 0 || size > kMaxFile) {
-                if (size > kMaxFile) SKSE::log::warn("UserIcons: {} skipped - bigger than 2 MB", Utf8(it->path().filename()));
+            if (size == 0 || size > kMaxSource) {
+                if (size > kMaxSource) SKSE::log::warn("UserIcons: {} skipped - bigger than 16 MB", Utf8(it->path().filename()));
                 continue;
             }
             const auto rel = it->path().lexically_relative(dir);   // no disk lookups (MO2's VFS)
@@ -160,14 +264,14 @@ std::string UserIcons::BuildJson(bool a_dataUrls, int* a_count, std::size_t* a_b
     for (const auto& i : List()) {
         std::string url;
         if (a_dataUrls) {
-            if (total + i.size > kMaxTotal) {
+            std::string data, mime;
+            if (!Load(i, data, mime)) continue;
+            if (total + data.size() > kMaxTotal) {
                 SKSE::log::warn("UserIcons: over 24 MB of pictures - {} and the rest are left out", i.rel);
                 break;
             }
-            std::string data;
-            if (!ReadAll(i.path, data)) continue;
             total += data.size();
-            url = std::string("data:") + MimeOf(i.path) + ";base64," + Base64(data);
+            url = "data:" + mime + ";base64," + Base64(data);
         } else {
             url = "usericons/" + UrlPath(i.rel);
         }
@@ -195,10 +299,11 @@ bool UserIcons::Read(const std::string& a_rel, std::string& a_data, std::string&
         p = q + 1;
     }
     const fs::path path = Dir() / FromUtf8(a_rel);
-    const char* mime = MimeOf(path);
     std::error_code ec;
-    if (!mime || !fs::is_regular_file(path, ec) || fs::file_size(path, ec) > kMaxFile) return false;
-    if (!ReadAll(path, a_data)) return false;
-    a_mime = mime;
-    return true;
+    if (!MimeOf(path) || !fs::is_regular_file(path, ec)) return false;
+    const auto size = fs::file_size(path, ec);
+    if (ec || size == 0 || size > kMaxSource) return false;
+    const auto t = fs::last_write_time(path, ec);
+    const Item item{ a_rel, path, size, ec ? 0LL : static_cast<long long>(t.time_since_epoch().count()) };
+    return Load(item, a_data, a_mime);   // shrunk like the game's copy
 }
