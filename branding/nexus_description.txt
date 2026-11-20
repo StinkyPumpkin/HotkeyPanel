@@ -11,7 +11,7 @@ A keyboard and mouse overlay showing every hotkey of every mod. One key opens it
 [*]Icon library: 130 pictures and 69 line icons, plus your own pictures (Icons folder)
 [*]Mod profiles: one glowing outline round a mod's keys
 [*]Modifier layers (Shift, Ctrl, any key) and tap modes (single, double, long press)
-[*]Click a key to fire it in game
+[*]Hold a key (left mouse, half a second) to fire it in game
 [*]MCM key picker: opens over an MCM that asks for a key; click the key there
 [*]Move and resize from the title and the corner grip
 [*]Tablet / phone remote over your home network

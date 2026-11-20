@@ -63,6 +63,12 @@ private:
     // which leaves the bare key to another mod (G6 = FollowerUI).
     bool ToggleModifierOk() const;
 
+    // --Claude 2026-11-20 (on PrismaUI Shift+F24 did not close the panel): Shift as the game's own key events
+    // report it. GetAsyncKeyState can answer "up" inside the game while Shift is held (wiki gotcha), so it is only
+    // the fallback. The time of the last Shift down / held event; 0 after its release.
+    std::atomic<long long> m_shiftSeenMs{ 0 };
+    bool ShiftHeldByEvents() const;
+
     std::atomic<std::uint32_t> m_toggleKey{ 87 };   // F11 default
     std::atomic<bool> m_toggleEnabled{ true };
     std::atomic<bool> m_externalOff{ false };   // --Claude 11-11: another mod opens the panel (its key is freed)

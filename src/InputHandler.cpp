@@ -3,6 +3,7 @@
 #include "PickMode.h"
 
 #include <Windows.h>  // GetKeyState + VK_F13..VK_F24
+#include <chrono>
 
 InputHandler* InputHandler::GetSingleton() {
     static InputHandler singleton;
@@ -39,13 +40,19 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
     if (!m_toggleEnabled.load() || m_externalOff.load()) return RE::BSEventNotifyControl::kContinue;
     const auto dik = static_cast<std::uint32_t>(e->numArg + 0.5f);
     if (dik != m_toggleKey.load()) return RE::BSEventNotifyControl::kContinue;
-    if (!ToggleModifierOk()) return RE::BSEventNotifyControl::kContinue;
+    if (!ToggleModifierOk()) {
+        // the bare key is another mod's (Shift+G6 = the panel, G6 = FollowerUI); said only while open, where it matters
+        if (auto* b = PrismaUIBridge::GetSingleton(); b && b->IsVisible())
+            SKSE::log::info("InputHandler: GKeyDown {} while open, but Shift reads up - ignored", dik);
+        return RE::BSEventNotifyControl::kContinue;
+    }
 
     auto* bridge = PrismaUIBridge::GetSingleton();
     if (!bridge) return RE::BSEventNotifyControl::kContinue;
     if (bridge->IsVisible()) {
         // --Claude: a picker that just opened ignores its own key (a second / bounced press)
         if (!bridge->IsTextInputActive() && !bridge->PickJustOpened()) bridge->HideUI();
+        else SKSE::log::info("InputHandler: GKeyDown {} while open - kept open (text box or picker)", dik);
     } else if (PickMode::OpenForWaitingMcm()) {
         // --Claude: F24 in an MCM that waits for a key opens the picker, never binds F24
     } else if (PickMode::SmfWindowOpen() && PickMode::SmfPickAvailable()) {
@@ -66,8 +73,18 @@ void InputHandler::SetToggleKey(std::uint32_t dxScanCode, bool enabled, bool a_s
                     a_shift ? "Shift+" : "", m_toggleKey.load(), enabled);
 }
 
+static long long NowMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+bool InputHandler::ShiftHeldByEvents() const {
+    // a held key sends an event every frame: one within the last 300 ms = still held (a lost release cannot stick)
+    const auto t = m_shiftSeenMs.load();
+    return t != 0 && NowMs() - t < 300;
+}
+
 bool InputHandler::ToggleModifierOk() const {
-    return !m_toggleShift.load() || (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+    return !m_toggleShift.load() || ShiftHeldByEvents() || (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
 }
 
 bool InputHandler::IsBlockingMenuOpen() {
@@ -99,6 +116,16 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
     auto* bridge = PrismaUIBridge::GetSingleton();
     if (!bridge) return RE::BSEventNotifyControl::kContinue;
 
+    // --Claude 2026-11-20: Shift (either one) as the game reports it, for ToggleModifierOk
+    for (auto* evt = *a_event; evt; evt = evt->next) {
+        auto* b = evt->AsButtonEvent();
+        if (!b || b->device.get() != RE::INPUT_DEVICE::kKeyboard) continue;
+        const auto id = b->GetIDCode();
+        if (id != 0x2A && id != 0x36) continue;
+        if (b->IsPressed()) m_shiftSeenMs.store(NowMs());
+        else if (b->IsUp()) m_shiftSeenMs.store(0);
+    }
+
     // Panel VISIBLE: FollowerUI pattern — return kStop so input doesn't
     // propagate to downstream sinks.  BlockerMenu's kGameplay context lets
     // the DX overlay still receive input, but ControlMap-bound engine
@@ -129,9 +156,15 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
             }
             // --Claude 2026-09-28: the panel's own key is never picked (a second F24 press 0.5 s after
             // opening got sent to an SMF page as its new key). It closes the panel - except in the
-            // first second of a picker; G-key toggles close through the G-Key Service sink.
+            // first second of a picker.
+            // --Claude 2026-11-20 (PrismaUI): a G-key toggle closes here too - under PrismaUI its GKeyDown
+            // event never closed the panel. Not the press that opened it (opened under 400 ms ago); the GKeyDown
+            // that follows finds the panel closed and HiddenWithin keeps it from opening again.
             if (code == toggleCode && ToggleModifierOk()) {
-                if (!IsGKey(toggleCode) && !bridge->PickJustOpened()) bridge->HideUI();
+                if (!bridge->PickJustOpened() && !bridge->ShownWithin(400)) {
+                    SKSE::log::info("InputHandler: toggle key {} pressed while open -> HideUI", code);
+                    bridge->HideUI();
+                }
                 break;
             }
             // --Claude 2026-09-28 MCM key picker: a REAL key pressed while the panel waits for a

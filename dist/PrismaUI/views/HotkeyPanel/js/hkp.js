@@ -935,7 +935,11 @@
 
     // Long-press (hold 450ms) as a fallback for right-click in case PrismaUI
     // swallows the contextmenu event.
+    // --Claude 2026-11-20 (PrismaUI): touch screens only now. With a mouse, holding the left button is
+    // hold-to-fire (550 ms); this 450 ms menu opened under the cursor first and cut the hold off. Right-click opens
+    // the menu in game on Magelight and PrismaUI (mousedown button 2 below catches it when contextmenu does not).
     function attachLongPress(el, keyId) {
+        if (!REMOTE) return;
         let timer = null;
         let startX = 0, startY = 0;
         let fired = false;

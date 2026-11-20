@@ -24,6 +24,8 @@ public:
     // --Claude 2026-11-20: true for a_ms after a close - the toggle key that closed it from the page (Magelight)
     // must not open it again a moment later in the DLL's own key handler
     bool HiddenWithin(long long a_ms) const;
+    // --Claude 2026-11-20: true for a_ms after the panel opened - the press that opened it is no close
+    bool ShownWithin(long long a_ms) const;
     bool IsAnyPrismaViewFocused() const;
     void SetPauseOnShow(bool pause) { m_pauseOnShow = pause; }
 
@@ -91,6 +93,7 @@ private:
     UIHost::ViewId m_view = 0;
     std::atomic<bool> m_visible{false};
     std::atomic<long long> m_hiddenMs{0};
+    std::atomic<long long> m_shownMs{0};
     bool m_ready = false;
     std::atomic<bool> m_domReady{false};
     std::atomic<bool> m_initialStateSent{false};

@@ -30,6 +30,7 @@ static std::atomic<long long> g_lastScanMs{ 0 };
 // (pictures can be big) and sent only when the folder changed since the page last got them; a reloaded page
 // gets them again. Checked when the page is ready and each time the panel opens.
 static void SendUserIcons();
+static long long SteadyMs();
 static std::atomic<bool> g_iconsBusy{ false };
 static std::mutex g_iconsMx;
 static std::string g_iconsSent = "none";   // fingerprint of what the page has; "none" = nothing sent yet (a real one is empty or ends in a newline)
@@ -710,6 +711,7 @@ void PrismaUIBridge::ShowUI() {
     BlockerMenu::Open();
 
     m_visible.store(true);
+    m_shownMs.store(SteadyMs());
     UIHost::Show(m_view, true);
     UIHost::Focus(m_view);
 
@@ -848,6 +850,11 @@ void PrismaUIBridge::ToggleUI() {
 
 bool PrismaUIBridge::HiddenWithin(long long a_ms) const {
     const auto t = m_hiddenMs.load();
+    return t != 0 && SteadyMs() - t < a_ms;
+}
+
+bool PrismaUIBridge::ShownWithin(long long a_ms) const {
+    const auto t = m_shownMs.load();
     return t != 0 && SteadyMs() - t < a_ms;
 }
 
