@@ -141,6 +141,35 @@ class Helpers(unittest.TestCase):
         self.assertEqual(es.installed_names([os.path.join(tmp, 'a')], []), [])   # no plugin list = hide nothing
         shutil.rmtree(tmp)
 
+    def test_user_icons(self):
+        tmp = tempfile.mkdtemp()
+        icons = lambda mod: os.path.join(tmp, mod, 'SKSE', 'Plugins', 'HotkeyPanel', 'Icons')
+        os.makedirs(os.path.join(icons('low'), 'My Combat'))
+        os.makedirs(icons('high'))
+        for mod, rel, data in (('low', 'My Combat/sword.png', b'low'), ('low', 'Shared.png', b'low'),
+                               ('high', 'Shared.png', b'high'), ('low', 'notes.txt', b'x'), ('low', 'empty.png', b'')):
+            with open(os.path.join(icons(mod), rel), 'wb') as f:
+                f.write(data)
+        files = es.user_icon_files([os.path.join(tmp, 'low'), os.path.join(tmp, 'high'), os.path.join(tmp, 'missing')])
+        self.assertEqual(sorted(files), ['My Combat/sword.png', 'Shared.png'])   # pictures only, empty ones left out
+        self.assertTrue(files['Shared.png'].startswith(os.path.join(tmp, 'high')))   # the later mod wins
+        lst = es.user_icon_list(files)
+        self.assertEqual(lst[0], {'id': 'u:My Combat/sword.png', 'name': 'sword', 'group': 'My Combat',
+                                  'url': 'usericons/My%20Combat/sword.png'})
+        self.assertEqual(lst[1]['group'], 'Your icons')
+        srv = es.EditorServer(es.Setup(page_files(), os.path.join(tmp, 'hotkeys.json'), os.path.join(tmp, 'hotkeys.json'), [], [], [], files))
+        try:
+            self.assertEqual(json.loads(get(srv.url() + 'api/usericons')[1])[0]['id'], 'u:My Combat/sword.png')
+            self.assertEqual(get(srv.url() + 'usericons/My%20Combat/sword.png'), (200, b'low'))
+            self.assertEqual(get(srv.url() + 'usericons/Shared.png'), (200, b'high'))
+            with self.assertRaises(urllib.error.HTTPError):
+                get(srv.url() + 'usericons/notes.txt')
+            with self.assertRaises(urllib.error.HTTPError):
+                get(srv.url() + 'usericons/..%2F..%2Fhotkeys.json')
+        finally:
+            srv.stop()
+            shutil.rmtree(tmp)
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=1)

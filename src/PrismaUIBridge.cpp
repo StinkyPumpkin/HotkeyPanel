@@ -6,6 +6,7 @@
 #include "PickMode.h"
 #include "RemoteServer.h"
 #include "HotkeyScan.h"
+#include "UserIcons.h"
 #include <vector>
 #include <format>
 #include <set>
@@ -24,6 +25,14 @@ static PrismaUIBridge* g_bridge = nullptr;
 static void RequestScan(bool force);
 static std::atomic<bool> g_scanEnabled{ true };      // settings.scanConfigs, pushed by the panel
 static std::atomic<long long> g_lastScanMs{ 0 };
+
+// --Claude 2026-11-20: the user's own key pictures (Data/SKSE/Plugins/HotkeyPanel/Icons). Read on a worker thread
+// (pictures can be big) and sent only when the folder changed since the page last got them; a reloaded page
+// gets them again. Checked when the page is ready and each time the panel opens.
+static void SendUserIcons();
+static std::atomic<bool> g_iconsBusy{ false };
+static std::mutex g_iconsMx;
+static std::string g_iconsSent = "none";   // fingerprint of what the page has; "none" = nothing sent yet (a real one is empty or ends in a newline)
 
 // --Claude focus recovery (ported from PEM, origin: archived sexlab-p-prism): after
 // closing the panel, verify PrismaUI actually released focus AND its FocusMenu, retry
@@ -486,6 +495,11 @@ void PrismaUIBridge::OnDomReady(UIHost::ViewId) {
     for (const auto& js : g_bridge->m_pendingJS) g_bridge->InvokeJS(js);
     g_bridge->m_pendingJS.clear();
     RequestScan(false);   // lands after the saved state (calls run in order)
+    {
+        std::lock_guard lk(g_iconsMx);
+        g_iconsSent = "none";   // a (re)loaded page has none
+    }
+    SendUserIcons();
     g_bridge->InvokeJS("HKP.setFonts(" + BuildFontListJson() + ")");
     auto keys = []() {
         const std::string gameKeys = BuildGameKeysJson();
@@ -702,6 +716,7 @@ void PrismaUIBridge::ShowUI() {
     InvokeJS("HKP.show()");
     SKSE::log::info("UIBridge: UI shown on {} (blocker pauses)", UIHost::Name());
     RequestScan(false);   // a key changed in a mod's menu since the last look shows up while it's open
+    SendUserIcons();      // pictures added to the folder since the last look
 }
 
 static long long SteadyMs() {
@@ -724,6 +739,33 @@ static void RequestScan(bool force) {
             });
         }
     });
+}
+
+static void SendUserIcons() {
+    if (g_iconsBusy.exchange(true)) return;
+    std::thread([]() {
+        const std::string sig = UserIcons::Signature();
+        bool same;
+        {
+            std::lock_guard lk(g_iconsMx);
+            same = sig == g_iconsSent;
+        }
+        if (same) { g_iconsBusy = false; return; }
+        const auto t0 = SteadyMs();
+        int count = 0;
+        std::size_t bytes = 0;
+        std::string json = UserIcons::BuildJson(true, &count, &bytes);
+        SKSE::log::info("UserIcons: {} pictures of the user's own ({} KB) read in {} ms", count, bytes / 1024, SteadyMs() - t0);
+        if (auto* task = SKSE::GetTaskInterface()) {
+            task->AddTask([json = std::move(json), sig]() {
+                if (g_bridge && g_bridge->SetUserIcons(json)) {
+                    std::lock_guard lk(g_iconsMx);
+                    g_iconsSent = sig;
+                }
+            });
+        }
+        g_iconsBusy = false;
+    }).detach();
 }
 
 bool PrismaUIBridge::PickJustOpened() const {

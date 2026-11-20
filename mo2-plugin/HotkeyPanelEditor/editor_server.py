@@ -10,12 +10,16 @@ import os
 import re
 import subprocess
 import threading
+import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
          '.png': 'image/png', '.svg': 'image/svg+xml', '.json': 'application/json', '.ttf': 'font/ttf', '.otf': 'font/otf',
-         '.woff': 'font/woff', '.woff2': 'font/woff2', '.jpg': 'image/jpeg'}
+         '.woff': 'font/woff', '.woff2': 'font/woff2', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
+         '.gif': 'image/gif'}
+PICTURES = ('.png', '.jpg', '.jpeg', '.svg', '.webp', '.gif')
+USER_ICONS_REL = os.path.join('SKSE', 'Plugins', 'HotkeyPanel', 'Icons')
 
 
 def skyrim_running():
@@ -37,13 +41,14 @@ def file_token(path):
 class Setup:
     """Everything the server needs, worked out on MO2's own thread before the server uses it."""
 
-    def __init__(self, files, state_read, state_write, game_keys, fonts, installed=None):
+    def __init__(self, files, state_read, state_write, game_keys, fonts, installed=None, user_icons=None):
         self.files = files                # 'css/hkp.css' -> real path (the winning mod's file)
         self.state_read = state_read      # real path of the hotkeys.json the game would read ('' = none yet)
         self.state_write = state_write    # where a save goes (that file, or MO2's overwrite folder)
         self.game_keys = game_keys        # [[dik, "Activate"], ...]
         self.fonts = fonts                # installed font family names
         self.installed = installed or []  # loaded plugin files and SKSE DLLs, by name (keys of removed mods hide)
+        self.user_icons = user_icons or {}  # 'Combat/sword.png' -> real path: the user's own key pictures
 
 
 class EditorServer:
@@ -154,6 +159,16 @@ class EditorServer:
                     return self._json(200, s.fonts)
                 if path == '/api/installed':
                     return self._json(200, s.installed)
+                if path == '/api/usericons':
+                    return self._json(200, user_icon_list(s.user_icons))
+                if path.startswith('/usericons/'):
+                    rel = urllib.parse.unquote(path[len('/usericons/'):])
+                    real = s.user_icons.get(rel)
+                    if not real:
+                        return self._send(404, 'not found', 'text/plain')
+                    with open(real, 'rb') as f:
+                        data = f.read()
+                    return self._send(200, data, TYPES.get(os.path.splitext(real)[1].lower(), 'application/octet-stream'))
                 rel = path.lstrip('/').replace('\\', '/')
                 real = s.files.get(rel) or s.files.get(rel.lower())
                 if not real or '..' in rel:
@@ -175,6 +190,35 @@ class EditorServer:
 
 
 # ---- helpers the plugin uses to build a Setup ----
+
+def user_icon_files(dirs):
+    """The user's own key pictures as the game would see them: Data/SKSE/Plugins/HotkeyPanel/Icons in each folder of
+    `dirs` (lowest priority first; a later one wins a clash), sub-folders up to 3 deep. {'Combat/sword.png': real}"""
+    out = {}
+    for base in dirs:
+        root = os.path.join(base, USER_ICONS_REL)
+        if not os.path.isdir(root):
+            continue
+        for cur, subdirs, names in os.walk(root):
+            if os.path.relpath(cur, root).count(os.sep) >= 2:
+                subdirs[:] = []
+            for n in names:
+                real = os.path.join(cur, n)
+                if os.path.splitext(n)[1].lower() in PICTURES and 0 < os.path.getsize(real) <= 2 * 1024 * 1024:
+                    out[os.path.relpath(real, root).replace(os.sep, '/')] = real
+    return out
+
+
+def user_icon_list(files):
+    """The list the panel takes (HKP.setUserIcons), in the shape the game sends it."""
+    out = []
+    for rel in sorted(files, key=str.lower)[:400]:
+        group = rel.rsplit('/', 1)[0] if '/' in rel else 'Your icons'
+        name = os.path.splitext(rel.rsplit('/', 1)[-1])[0]
+        out.append({'id': 'u:' + rel, 'name': name, 'group': group, 'url': 'usericons/' + urllib.parse.quote(rel)})
+    return out
+
+
 
 def read_game_keys(paths):
     """Skyrim's gameplay keyboard binds from the first controlmap file that exists ([[dik, event], ...])."""

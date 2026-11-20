@@ -1,6 +1,7 @@
 // Built WITHOUT the CommonLib PCH (see CMakeLists.txt): httplib must include winsock2.h
 // before anything else includes windows.h. See RemoteServer.h for the big picture.
 #include "RemoteServer.h"
+#include "UserIcons.h"
 
 // CommonLib builds everything for Windows 7 (_WIN32_WINNT=0x0601) and httplib refuses anything
 // below Windows 10. Skyrim AE needs Windows 10 anyway; only this file sees the change.
@@ -186,6 +187,8 @@ namespace {
         if (ext == "jpg" || ext == "jpeg") return "image/jpeg";
         if (ext == "svg")  return "image/svg+xml";
         if (ext == "json") return "application/json";
+        if (ext == "webp") return "image/webp";
+        if (ext == "gif")  return "image/gif";
         if (ext == "html") return "text/html; charset=utf-8";
         return "application/octet-stream";
     }
@@ -285,8 +288,25 @@ namespace {
 
         a_srv.Get("/", ServeIndex);
         a_srv.Get("/index.html", ServeIndex);
-        // One folder deep, one plain file name: nothing outside the view folder is reachable.
-        a_srv.Get(R"(/(css|js|img|remote)/([A-Za-z0-9_\-]+\.[A-Za-z0-9]+))", ServeViewFile);
+        // One known folder, one plain file name: nothing outside the view folder is reachable.
+        // --Claude 2026-11-20: + the icon pictures (icons/menus, icons/items).
+        a_srv.Get(R"(/(css|js|img|remote|icons/menus|icons/items)/([A-Za-z0-9_\-]+\.[A-Za-z0-9]+))", ServeViewFile);
+
+        // --Claude 2026-11-20: the user's own key pictures (Data/SKSE/Plugins/HotkeyPanel/Icons) and their list.
+        // UserIcons::Read only answers picture files inside that folder.
+        a_srv.Get("/api/usericons", [](const httplib::Request&, httplib::Response& a_res) {
+            a_res.set_header("Cache-Control", "no-store");
+            a_res.set_content(UserIcons::BuildJson(false), "application/json");
+        });
+        a_srv.Get(R"(/usericons/(.+))", [](const httplib::Request& a_req, httplib::Response& a_res) {
+            std::string data, mime;
+            if (!UserIcons::Read(a_req.matches[1].str(), data, mime)) {
+                a_res.status = 404;
+                return;
+            }
+            a_res.set_header("Cache-Control", "no-cache");
+            a_res.set_content(data, mime);
+        });
 
         a_srv.Get("/api/state", GetState);
         a_srv.Post("/api/state", PostState);

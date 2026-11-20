@@ -100,7 +100,13 @@ class HotkeyPanelEditor(mobase.IPluginTool):
         keys_paths = [os.path.join(es.documents_dir(), 'My Games', 'Skyrim Special Edition', 'ControlMap_Custom.txt'),
                       org.resolvePath('Interface/Controls/PC/controlmap.txt') or '']
         return es.Setup(self._page_files(), read, write, es.read_game_keys(keys_paths), es.installed_fonts(),
-                        self._installed())
+                        self._installed(), es.user_icon_files(self._data_dirs() + self._active_mod_dirs()))
+
+    def _data_dirs(self):
+        try:
+            return [self._organizer.managedGame().dataDirectory().absolutePath()]
+        except Exception:
+            return []
 
     # loaded plugins + SKSE DLLs, so keys from a removed mod's left-over settings file stay off the panel
     def _installed(self):

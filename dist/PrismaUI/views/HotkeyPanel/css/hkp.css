@@ -1160,6 +1160,9 @@ body.hkp-resizing, body.hkp-resizing * { cursor: nwse-resize !important; }
 /* Settings > Key icons > Icon only */
 body.hkp-icon-only .hkp-has-icon > .hkp-key-label, body.hkp-icon-only .hkp-has-icon > .hkp-m-label { display: none; }
 body.hkp-icon-only .hkp-m-input.hkp-has-icon { justify-content: center; }
+/* one key's own "hide the name" (the picker) */
+.hkp-has-icon.hkp-noname > .hkp-key-label, .hkp-has-icon.hkp-noname > .hkp-m-label { display: none; }
+.hkp-m-input.hkp-has-icon.hkp-noname { justify-content: center; }
 .hkp-dim > .hkp-key-icon, .hkp-dim > .hkp-ring { opacity: 0.35; }
 
 /* the border: a layer under the text, inside the key. --ring = its colour. */
@@ -1216,6 +1219,10 @@ body.hkp-icon-only .hkp-m-input.hkp-has-icon { justify-content: center; }
 .hkp-look-bcell.hkp-on span { color: var(--hkp-gold-hi); }
 .hkp-look-bcols { display: flex; flex-wrap: wrap; gap: 4px; }
 .hkp-look-bcols .hkp-swatch { width: 20px; height: 20px; flex: none; cursor: pointer; aspect-ratio: auto; }
+.hkp-look-name { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
+.hkp-look-name .hkp-cw-label { margin: 0; }
+.hkp-look-name .hkp-btn { min-width: 0; padding: 0 12px; }
+.hkp-look-name.hkp-look-off { opacity: 0.4; pointer-events: none; }
 .hkp-look-bar { display: flex; align-items: center; gap: 12px; margin: 8px 0; flex: none; }
 .hkp-look-bar .hkp-cw-label { margin: 0; }
 .hkp-look-cats .hkp-btn { min-width: 0; padding: 0 12px; }

@@ -43,6 +43,7 @@ add_commonlibsse_plugin(${PROJECT_NAME} MINIMUM_SKSE_VERSION 0.0.0 SOURCES
     src/PickMode.cpp
     src/RemoteServer.cpp
     src/HotkeyScan.cpp
+    src/UserIcons.cpp
 )
 target_compile_features(${PROJECT_NAME} PRIVATE cxx_std_23)
 target_precompile_headers(${PROJECT_NAME} PRIVATE PCH.h)
