@@ -272,14 +272,16 @@
         // controls) leaves; the bottom row keeps at least 26%. Keys are width-bound on a 16:9 screen, so
         // the spare height makes them taller (up to 1.35x their width) = more lines for a label.
         const mainInner = main.clientHeight - mainPadY - gap;
-        const kbMaxH = mainInner - Math.max(230, mainInner * 0.26);
+        // --Claude 2026-11-20: a big panel (4K, or resized to the whole screen) gave the bottom row a third of
+        // the height; now it keeps about a quarter and the keys take the rest (up to 1.6x as tall as wide)
+        const kbMaxH = mainInner - Math.max(230, mainInner * 0.25);
         const kbPadY = parseFloat(kbCs.paddingTop) + parseFloat(kbCs.paddingBottom);
         const availH = kbMaxH - kbPadY;
         const uW = Math.floor((availW - 108) / 22);
         const uH = Math.floor((availH - 20) / 6);
         const u = Math.max(40, Math.min(180, Math.min(uW, uH)));
         document.documentElement.style.setProperty('--hkp-u', u + 'px');
-        let keyH = REMOTE ? u : Math.max(u, Math.min(uH, Math.round(u * 1.35)));
+        let keyH = REMOTE ? u : Math.max(u, Math.min(uH, Math.round(u * 1.6)));
         stackStep = Math.max(3, Math.min(8, Math.round(u / 18)));
         // --Claude 2026-09-30: on a tablet with the mouse & profiles section folded away the
         // keyboard has the whole height, but a landscape screen keeps the keys width-bound, so
@@ -293,6 +295,13 @@
             keyH = Math.max(u, Math.min(Math.floor((fullH - 20) / 6), Math.floor(u * 2.5)));
         }
         document.documentElement.style.setProperty('--hkp-key-h', keyH + 'px');
+        // the mouse block keeps its shape (width from the row's height), so the drawing and its lines stay
+        // as laid out instead of a narrow, tall column whose lines fan out and cross
+        const bottom = document.querySelector('.hkp-bottom'), mw = document.querySelector('.hkp-mouse-wrap');
+        if (bottom && mw && !REMOTE) {
+            const bh = bottom.clientHeight;
+            mw.style.width = Math.round(Math.max(380, Math.min(bh * 2.0, bottom.clientWidth * 0.46))) + 'px';
+        }
         refitAll();
         drawMouseLines();
         drawGroupOutline();
