@@ -1103,3 +1103,7 @@ body.hkp-color-dot .hkp-key.hkp-dim, body.hkp-color-dot .hkp-m-input.hkp-dim { b
 .hkp-cw-spacer { flex: 1; }
 #hkp-cw-save:disabled { opacity: 0.6; cursor: default; }
 .hkp-modal-buttons { align-items: center; }
+
+/* --Claude 2026-11-20: the title sits in the keyboard's top-right corner, next to the close button */
+.hkp-kb-title { position: absolute; top: 10px; right: 56px; height: 34px; display: flex; align-items: center;
+    z-index: 8; pointer-events: none; white-space: nowrap; }

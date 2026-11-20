@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Hotkey Panel</title>
-    <link rel="stylesheet" href="css/hkp.css?v=21">
+    <link rel="stylesheet" href="css/hkp.css?v=22">
 </head>
 <body>
 <div id="hkp-root" class="hkp-hidden">
@@ -14,6 +14,7 @@
 
         <!-- Keyboard: full width of main -->
         <div class="hkp-keyboard hkp-panel">
+            <div class="hkp-title hkp-kb-title">Hotkey Panel</div>
             <button class="hkp-topbar-btn hkp-close-btn hkp-kb-close" onclick="HKP.close(event)" title="Close">&times;</button>
             <div class="hkp-kb-main" id="hkp-kb-main"></div>
             <div class="hkp-kb-nav" id="hkp-kb-nav"></div>
@@ -44,9 +45,6 @@
             <div class="hkp-info hkp-panel" id="hkp-info"></div>
 
             <div class="hkp-side hkp-panel">
-                <div class="hkp-side-head">
-                    <div class="hkp-title">Hotkey Panel</div>
-                </div>
                 <div class="hkp-topbar">
                     <div class="hkp-active-modifiers" id="hkp-active-mods" title="Active modifier layer">Default layer</div>
                     <button class="hkp-topbar-btn" id="hkp-btn-tap" onclick="HKP.cycleTapMode()" title="Cycle tap mode: Single / Double / Long">Tap: Single</button>
