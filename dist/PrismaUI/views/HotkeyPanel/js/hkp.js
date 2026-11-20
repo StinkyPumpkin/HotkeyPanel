@@ -396,18 +396,25 @@
         return { h: (h * 60 + 360) % 360, s: mx ? d / mx : 0, v: mx };
     }
     function cwHex() { const [r, g, b] = hsv2rgb(cw.h, cw.s, cw.v); return toHex8(r, g, b, cw.a); }
+    // --Claude 2026-11-20 (Magelight test: a canvas drew nothing there): the wheel is SVG - 120 hue wedges, a white
+    // radial fade on top (= saturation), and a black disc whose opacity is 1 - brightness. That is HSV exactly:
+    // white over the hue at alpha 1-s is the saturation blend, black at alpha 1-v multiplies by v.
     function drawWheel() {
-        const cv = document.getElementById('hkp-cw-wheel');
-        if (!cv || !cv.getContext) return;
-        const ctx = cv.getContext('2d'), W = cv.width, R = W / 2, img = ctx.createImageData(W, W), d = img.data;
-        for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
-            const dx = x - R + 0.5, dy = y - R + 0.5, dist = Math.sqrt(dx * dx + dy * dy), i = (y * W + x) * 4;
-            if (dist > R) { d[i + 3] = 0; continue; }
-            const h = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
-            const [r, g, b] = hsv2rgb(h, dist / R, cw.v);
-            d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = dist > R - 1 ? Math.round(255 * (R - dist)) : 255;
+        const g = document.getElementById('hkp-cw-hues');
+        if (g && !g.firstChild) {
+            const N = 120, R = 120;
+            let h = '';
+            for (let i = 0; i < N; i++) {
+                const a0 = (i * 360 / N - 0.4) * Math.PI / 180, a1 = ((i + 1) * 360 / N + 0.4) * Math.PI / 180;
+                const hue = (i + 0.5) * 360 / N;
+                h += '<path d="M0 0L' + (R * Math.cos(a0)).toFixed(2) + ' ' + (R * Math.sin(a0)).toFixed(2) +
+                     'A' + R + ' ' + R + ' 0 0 1 ' + (R * Math.cos(a1)).toFixed(2) + ' ' + (R * Math.sin(a1)).toFixed(2) +
+                     'Z" fill="hsl(' + hue.toFixed(1) + ',100%,50%)"/>';
+            }
+            g.innerHTML = h;
         }
-        ctx.putImageData(img, 0, 0);
+        const dark = document.getElementById('hkp-cw-dark');
+        if (dark && cw) dark.setAttribute('fill-opacity', (1 - cw.v).toFixed(3));
     }
     function syncWheel(redraw) {
         if (!cw) return;
@@ -2125,6 +2132,17 @@
                 syncSettingsInputs();
                 return;
             }
+            if (window.magelight && !pick && isToggleKeyEvent(e)) {
+                // --Claude 2026-11-20: under Magelight the keys reach the page, not the DLL's key handler, so the
+                // panel's own toggle key (Shift+F24 ...) closes it from here
+                const t0 = e.target;
+                if (!(t0 && (t0.tagName === 'INPUT' || t0.tagName === 'TEXTAREA'))) {
+                    e.preventDefault();
+                    dispatchToBridge('hkpCloseUI', '1');
+                    document.getElementById('hkp-root').classList.add('hkp-hidden');
+                    return;
+                }
+            }
             if (e.key === 'Escape' || e.key === 'Tab') {
                 // --Claude text-input guard: a focused text box owns its keys — its own
                 // keydown (Enter=save, ESC=cancel) has already run; just drop focus and
@@ -2152,6 +2170,22 @@
                 document.getElementById('hkp-root').classList.add('hkp-hidden');
             }
         });
+    }
+
+    // the key event as the panel stores key names ('F24', 'KeyQ'; F13-F24 from e.key / keyCode when there is no code)
+    function eventKeyCode(e) {
+        let code = e.code;
+        if (!code || code === 'Unidentified') {
+            if (/^F(1[3-9]|2[0-4])$/.test(e.key)) code = e.key;
+            else if (e.keyCode >= 124 && e.keyCode <= 135) code = 'F' + (e.keyCode - 111);
+        }
+        return code || '';
+    }
+    function isToggleKeyEvent(e) {
+        const want = String(state.settings.toggleKey || '');
+        if (!want || state.settings.toggleKeyEnabled === false) return false;
+        const shift = want.indexOf('Shift+') === 0, base = shift ? want.slice(6) : want;
+        return eventKeyCode(e) === base && (!shift || e.shiftKey);
     }
 
     function dispatchToBridge(channel, payload) {

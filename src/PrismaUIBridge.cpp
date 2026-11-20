@@ -760,6 +760,7 @@ void PrismaUIBridge::FinishManualPick(std::uint32_t a_code) {
 void PrismaUIBridge::HideUI() {
     if (!m_ready || !m_view || !IsVisible()) return;
     m_visible.store(false);
+    m_hiddenMs.store(SteadyMs());
     m_textInput.store(false);  // never leave the text-input gate armed after close
     m_pickModal.store(false);
     if (m_pickActive.exchange(false)) SKSE::log::info("PrismaUIBridge: key picker closed");
@@ -801,6 +802,11 @@ void PrismaUIBridge::HideUI() {
 void PrismaUIBridge::ToggleUI() {
     if (!m_ready || !m_view) return;
     if (IsVisible()) HideUI(); else ShowUI();
+}
+
+bool PrismaUIBridge::HiddenWithin(long long a_ms) const {
+    const auto t = m_hiddenMs.load();
+    return t != 0 && SteadyMs() - t < a_ms;
 }
 
 bool PrismaUIBridge::IsVisible() const {

@@ -50,7 +50,7 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
         // --Claude: F24 in an MCM that waits for a key opens the picker, never binds F24
     } else if (PickMode::SmfWindowOpen() && PickMode::SmfPickAvailable()) {
         bridge->ShowManualPick();   // --Claude: over an SKSE Menu Framework window = key picker
-    } else if (!IsBlockingMenuOpen()) {
+    } else if (!IsBlockingMenuOpen() && !bridge->HiddenWithin(400)) {
         bridge->ShowUI();
     }
     return RE::BSEventNotifyControl::kContinue;
@@ -178,6 +178,7 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
         if (!button || !button->IsDown()) continue;
         if (button->device.get() != RE::INPUT_DEVICE::kKeyboard) continue;
         if (button->GetIDCode() == wantKey && !IsGKey(wantKey) && ToggleModifierOk()) {  // G-keys handled by the service sink
+            if (bridge->HiddenWithin(400)) return RE::BSEventNotifyControl::kStop;   // the press that just closed it
             if (PickMode::SmfWindowOpen() && PickMode::SmfPickAvailable()) {
                 SKSE::log::info("InputHandler: toggle key {} pressed over an SKSE menu -> key picker", wantKey);
                 bridge->ShowManualPick();

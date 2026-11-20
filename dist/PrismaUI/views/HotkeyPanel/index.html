@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Hotkey Panel</title>
-    <link rel="stylesheet" href="css/hkp.css?v=25">
+    <link rel="stylesheet" href="css/hkp.css?v=26">
 </head>
 <body>
 <div id="hkp-root" class="hkp-hidden">
@@ -118,7 +118,7 @@
         <div class="hkp-modal-box hkp-cw-box">
             <div class="hkp-modal-title">Set colour</div>
             <div class="hkp-cw-main">
-                <div class="hkp-cw-wheel-wrap" id="hkp-cw-wheel-wrap"><canvas id="hkp-cw-wheel" width="240" height="240"></canvas><div class="hkp-cw-knob" id="hkp-cw-knob"></div></div>
+                <div class="hkp-cw-wheel-wrap" id="hkp-cw-wheel-wrap"><svg id="hkp-cw-wheel" viewBox="-120 -120 240 240" width="240" height="240"><defs><radialGradient id="hkp-cw-sat" cx="0" cy="0" r="120" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff" stop-opacity="1"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient></defs><g id="hkp-cw-hues"></g><circle r="120" fill="url(#hkp-cw-sat)"/><circle id="hkp-cw-dark" r="120" fill="#000" fill-opacity="0"/></svg><div class="hkp-cw-knob" id="hkp-cw-knob"></div></div>
                 <div class="hkp-cw-side">
                     <div class="hkp-cw-label">Brightness <span id="hkp-cw-vval"></span></div>
                     <div class="hkp-cw-track" id="hkp-cw-val"><div class="hkp-cw-fill"></div><div class="hkp-cw-thumb"></div></div>
@@ -277,6 +277,6 @@
 </div>
 
 <script src="js/gkeys.js?v=1"></script>
-<script src="js/hkp.js?v=29"></script>
+<script src="js/hkp.js?v=30"></script>
 </body>
 </html>
