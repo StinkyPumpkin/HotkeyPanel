@@ -1,9 +1,13 @@
 {
     "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
-    "name": "hotkey-panel-prisma",
-    "version-string": "1.0.0",
+    "name": "hotkey-panel",
+    "version-string": "2.0.0",
     "dependencies": [
-        "commonlibsse-ng",
+        "directxmath",
+        "directxtk",
+        "fmt",
+        "rapidcsv",
+        "spdlog",
         {
             "name": "cpp-httplib",
             "default-features": false

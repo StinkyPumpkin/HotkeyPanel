@@ -61,7 +61,7 @@ namespace {
     // SkyUI's config panel is waiting for a key (not the vanilla Controls remap).
     bool SkyUIRemapActive(RE::GFxMovieView* a_mv) {
         auto* mc = RE::MenuControls::GetSingleton();
-        if (!mc || !mc->remapMode || !a_mv) return false;
+        if (!mc || !mc->GetRuntimeData().remapMode || !a_mv) return false;
         bool remap = false;
         return GetBool(a_mv, std::string(kPanel) + "._bRemapMode", remap) && remap;
     }
@@ -247,14 +247,14 @@ void PickMode::HoldMenuRemap(bool a_hold) {
     auto* mc = RE::MenuControls::GetSingleton();
     if (!mc) return;
     if (a_hold) {
-        if (mc->remapMode) {
-            mc->remapMode = false;
+        if (mc->GetRuntimeData().remapMode) {
+            mc->GetRuntimeData().remapMode = false;
             g_heldRemap = true;
             SKSE::log::info("PickMode: menu input back on while the picker is up (cursor)");
         }
     } else if (g_heldRemap) {
         g_heldRemap = false;
         // only if SkyUI still waits - SKSE's handler clears it itself once it has its key
-        if (SkyUIWaiting(JournalMovie())) mc->remapMode = true;
+        if (SkyUIWaiting(JournalMovie())) mc->GetRuntimeData().remapMode = true;
     }
 }

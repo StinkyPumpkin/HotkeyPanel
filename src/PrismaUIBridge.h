@@ -2,7 +2,7 @@
 
 #include <RE/Skyrim.h>
 #include <SKSE/SKSE.h>
-#include "PrismaUI_API.h"
+#include "UIHost.h"
 #include <string>
 #include <atomic>
 #include <cstdio>
@@ -71,12 +71,15 @@ private:
     PrismaUIBridge& operator=(const PrismaUIBridge&) = delete;
 
     void RegisterJSListeners();
+    static void OnDomReady(UIHost::ViewId view);
+    static void OnHostExit();
     void InvokeJS(const std::string& script);
     void PushInitialState();
     std::vector<std::string> m_pendingJS;   // external hotkeys received before DOM ready
 
-    PRISMA_UI_API::IVPrismaUI2* m_api = nullptr;
-    PrismaView m_view = 0;
+    // --Claude 2026-11-20: the page runs in Magelight UI (or PrismaUI as the fallback) through UIHost
+    UIHost::ViewId m_view = 0;
+    std::atomic<bool> m_visible{false};
     bool m_ready = false;
     std::atomic<bool> m_domReady{false};
     std::atomic<bool> m_initialStateSent{false};

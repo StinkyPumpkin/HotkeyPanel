@@ -162,9 +162,10 @@ namespace {
         return true;
     }
 
+    std::string g_viewsRel = "Data/PrismaUI/views/HotkeyPanel";   // SetViewsDir: the Magelight folder when that host runs it
     fs::path ViewsDir() {
         // Skyrim runs with CWD = game root, and under MO2 the VFS resolves Data/ for us.
-        return fs::current_path() / "Data" / "PrismaUI" / "views" / "HotkeyPanel";
+        return fs::current_path() / fs::path(g_viewsRel);
     }
 
     bool ReadFile(const fs::path& a_path, std::string& a_out) {
@@ -195,7 +196,7 @@ namespace {
         std::string html;
         if (!ReadFile(ViewsDir() / "index.html", html)) {
             a_res.status = 500;
-            a_res.set_content("Hotkey Panel: Data/PrismaUI/views/HotkeyPanel/index.html not found", "text/plain");
+            a_res.set_content("Hotkey Panel: " + g_viewsRel + "/index.html not found", "text/plain");
             return;
         }
         static const std::string kHead =
@@ -410,4 +411,8 @@ void RemoteServer::PublishState(const std::string& a_json) {
 void RemoteServer::SetGameKeys(const std::string& a_json) {
     std::lock_guard lk(g_stateMx);
     g_gameKeys = a_json.empty() ? std::string("[]") : a_json;
+}
+
+void RemoteServer::SetViewsDir(const std::string& a_relative) {
+    if (!a_relative.empty()) g_viewsRel = a_relative;
 }

@@ -453,60 +453,58 @@ PrismaUIBridge* PrismaUIBridge::GetSingleton() {
 
 bool PrismaUIBridge::Initialize() {
     if (m_ready) return true;
-    SKSE::log::info("PrismaUIBridge: Initializing...");
-
-    m_api = PRISMA_UI_API::RequestPluginAPI<PRISMA_UI_API::IVPrismaUI2>();
-    if (!m_api) {
-        auto v1 = PRISMA_UI_API::RequestPluginAPI<PRISMA_UI_API::IVPrismaUI1>();
-        if (!v1) {
-            SKSE::log::error("PrismaUIBridge: PrismaUI not found! Is PrismaUI.dll installed?");
-            return false;
-        }
-        m_api = static_cast<PRISMA_UI_API::IVPrismaUI2*>(v1);
-        SKSE::log::info("PrismaUIBridge: Using PrismaUI API v1");
-    } else {
-        SKSE::log::info("PrismaUIBridge: Using PrismaUI API v2");
+    SKSE::log::info("UIBridge: Initializing...");
+    if (!UIHost::Init()) {
+        SKSE::log::error("UIBridge: no web UI host - install Magelight UI (or PrismaUI)");
+        return false;
     }
 
     g_bridge = this;
     SetRemoteHooks();
+    RemoteServer::SetViewsDir(UIHost::PageRoot().generic_string());
 
-    m_view = m_api->CreateView("HotkeyPanel/index.html",
-        [](PrismaView) {
-            SKSE::log::info("PrismaUIBridge: DOM ready!");
-            if (g_bridge) {
-                g_bridge->m_domReady = true;
-                g_bridge->RegisterJSListeners();
-                g_bridge->PushInitialState();
-                // external hotkeys that arrived before the view existed (saved state is loaded now)
-                for (const auto& js : g_bridge->m_pendingJS) g_bridge->InvokeJS(js);
-                g_bridge->m_pendingJS.clear();
-                RequestScan(false);   // lands after the saved state (Invokes run in order)
-                g_bridge->InvokeJS("HKP.setFonts(" + BuildFontListJson() + ")");
-                if (auto* tasks = SKSE::GetTaskInterface()) {
-                    tasks->AddTask([]() {
-                        const std::string gameKeys = BuildGameKeysJson();
-                        RemoteServer::SetGameKeys(gameKeys);
-                        if (g_bridge) g_bridge->InvokeJS("HKP.setGameKeys(" + gameKeys + ")");
-                    });
-                }
-            }
-        });
-
+    // Escape goes to the page (Magelight): its cascade closes dialogs first, then the panel.
+    m_view = UIHost::Create("HotkeyPanel", "index.html", &PrismaUIBridge::OnDomReady, &PrismaUIBridge::OnHostExit, true);
     if (!m_view) {
-        SKSE::log::error("PrismaUIBridge: Failed to create Prisma view!");
+        SKSE::log::error("UIBridge: Failed to create the view! ({})", UIHost::Name());
         return false;
     }
-
-    m_api->Hide(m_view);
     m_ready = true;
-    SKSE::log::info("PrismaUIBridge: Initialized successfully!");
+    SKSE::log::info("UIBridge: Initialized on {}", UIHost::Name());
     return true;
 }
 
+// The page's DOM is ready (game thread on Magelight, Ultralight's thread on PrismaUI); again after a reload.
+void PrismaUIBridge::OnDomReady(UIHost::ViewId) {
+    SKSE::log::info("UIBridge: DOM ready!");
+    if (!g_bridge) return;
+    g_bridge->m_domReady = true;
+    g_bridge->m_initialStateSent = false;   // a reloaded page needs its state again
+    g_bridge->RegisterJSListeners();
+    g_bridge->PushInitialState();
+    // external hotkeys that arrived before the view existed (saved state is loaded now)
+    for (const auto& js : g_bridge->m_pendingJS) g_bridge->InvokeJS(js);
+    g_bridge->m_pendingJS.clear();
+    RequestScan(false);   // lands after the saved state (calls run in order)
+    g_bridge->InvokeJS("HKP.setFonts(" + BuildFontListJson() + ")");
+    auto keys = []() {
+        const std::string gameKeys = BuildGameKeysJson();
+        RemoteServer::SetGameKeys(gameKeys);
+        if (g_bridge) g_bridge->InvokeJS("HKP.setGameKeys(" + gameKeys + ")");
+    };
+    if (UIHost::IsMagelight()) keys();   // already on the game thread
+    else if (auto* tasks = SKSE::GetTaskInterface()) tasks->AddTask(keys);
+}
+
+// Magelight ended our UI mode itself (its own key, a load screen, ...): close the panel properly.
+void PrismaUIBridge::OnHostExit() {
+    SKSE::log::info("UIBridge: the host ended UI mode - closing the panel");
+    if (g_bridge && g_bridge->IsVisible()) g_bridge->HideUI();
+}
+
 void PrismaUIBridge::Shutdown() {
-    if (m_api && m_view) {
-        m_api->Destroy(m_view);
+    if (m_view) {
+        UIHost::Destroy(m_view);
         m_view = 0;
     }
     m_ready = false;
@@ -515,39 +513,40 @@ void PrismaUIBridge::Shutdown() {
 }
 
 void PrismaUIBridge::RegisterJSListeners() {
-    if (!m_api || !m_view) return;
+    if (!m_view) return;
 
     // UI ready notification (currently unused but available for retry paths)
-    m_api->RegisterJSListener(m_view, "hkpReady", [](const char* data) {
+    UIHost::Listen(m_view, "hkpReady", [](const char* data) {
         SKSE::log::info("UI: hkpReady");
     });
 
     // JS → DLL: persist full state JSON
-    m_api->RegisterJSListener(m_view, "hkpSaveState", [](const char* data) {
+    UIHost::Listen(m_view, "hkpSaveState", [](const char* data) {
         if (!data) return;
-        std::string json(data);
-        SKSE::log::info("UI: hkpSaveState ({} bytes)", json.size());
-        JsonStore::Save(json);
-        RemoteServer::PublishState(json);
+        UIHost::Game([json = std::string(data)]() {
+            SKSE::log::info("UI: hkpSaveState ({} bytes)", json.size());
+            JsonStore::Save(json);
+            RemoteServer::PublishState(json);
+        });
     });
 
     // JS → DLL: user closed the UI from inside the panel (X button, etc.)
-    m_api->RegisterJSListener(m_view, "hkpCloseUI", [](const char*) {
+    UIHost::Listen(m_view, "hkpCloseUI", [](const char*) {
         SKSE::log::info("UI: hkpCloseUI");
-        if (g_bridge) g_bridge->HideUI();
+        UIHost::Game([]() { if (g_bridge) g_bridge->HideUI(); });
     });
 
     // JS → DLL: the user left-clicked a labelled key in the panel. Close the panel
     // and fire that key for real, so whichever mod owns the hotkey acts on it.
-    m_api->RegisterJSListener(m_view, "hkpTriggerKey", [](const char* data) {
-        TriggerPanelKey(data ? data : "", "UI");
+    UIHost::Listen(m_view, "hkpTriggerKey", [](const char* data) {
+        UIHost::Game([s = std::string(data ? data : "")]() { TriggerPanelKey(s, "UI"); });
     });
 
     // JS → DLL: settings push. Fired once on loadState (so we learn the
     // persisted toggle key) and whenever the user changes it in Settings.
     // Format: "enabled|keyName"   e.g. "1|F11", "0|", "1|KeyQ"
-    m_api->RegisterJSListener(m_view, "hkpSetToggleKey", [](const char* data) {
-        std::string s(data ? data : "");
+    UIHost::Listen(m_view, "hkpSetToggleKey", [](const char* data) {
+        UIHost::Game([s = std::string(data ? data : "")]() {
         SKSE::log::info("UI: hkpSetToggleKey '{}'", s);
         auto pipe = s.find('|');
         if (pipe == std::string::npos) return;
@@ -558,11 +557,12 @@ void PrismaUIBridge::RegisterJSListeners() {
         if (shift) keyName.erase(0, 6);
         const auto code = InputHandler::KeyNameToDXScanCode(keyName);
         InputHandler::GetSingleton()->SetToggleKey(code, enabled, shift);
+        });
     });
 
     // JS → DLL: pause-on-show preference. No UI for this yet but kept for
     // forward compat — JS may dispatch it via dispatchToBridge('hkpSetPause').
-    m_api->RegisterJSListener(m_view, "hkpSetPause", [](const char* data) {
+    UIHost::Listen(m_view, "hkpSetPause", [](const char* data) {
         std::string s(data ? data : "");
         SKSE::log::info("UI: hkpSetPause '{}'", s);
         if (g_bridge) g_bridge->m_pauseOnShow = (s == "1");
@@ -570,7 +570,7 @@ void PrismaUIBridge::RegisterJSListeners() {
 
     // JS → DLL: "1" while any text box has focus (edit-name modal, profile modal,
     // inline mouse inputs), "0" when it blurs. Gates the close keys in InputHandler.
-    m_api->RegisterJSListener(m_view, "hkpTextInput", [](const char* data) {
+    UIHost::Listen(m_view, "hkpTextInput", [](const char* data) {
         if (g_bridge) g_bridge->SetTextInputActive(data && data[0] == '1');
     });
 
@@ -578,24 +578,24 @@ void PrismaUIBridge::RegisterJSListeners() {
     // to move its key: SKSE mod event HKP_MoveHotkey (strArg = source, numArg = new DX scan
     // code). The owner applies it and re-announces through HKP_SetHotkey, which is what
     // actually moves the key in the panel; a refusal re-announces the old key.
-    m_api->RegisterJSListener(m_view, "hkpMoveHotkey", [](const char* data) {
-        MoveModHotkey(data ? data : "", "UI");
+    UIHost::Listen(m_view, "hkpMoveHotkey", [](const char* data) {
+        UIHost::Game([s = std::string(data ? data : "")]() { MoveModHotkey(s, "UI"); });
     });
 
     // --Claude 2026-09-30: settings.remoteEnabled / remotePort, "1|8950". Starts or stops the
     // tablet remote; the answer comes back as HKP.setRemoteInfo(...) for the Settings row.
-    m_api->RegisterJSListener(m_view, "hkpSetRemote", [](const char* data) {
+    UIHost::Listen(m_view, "hkpSetRemote", [](const char* data) {
         const std::string s = data ? data : "";
         const auto bar = s.find('|');
         const bool on = !s.empty() && s[0] == '1';
         const int port = bar == std::string::npos ? 0 : std::atoi(s.c_str() + bar + 1);
-        RemoteServer::Configure(on, port);
+        UIHost::Game([on, port]() { RemoteServer::Configure(on, port); });
     });
 
     // --Claude 2026-09-28 MCM key picker. JS -> DLL "dik": the key the user clicked (and named) in
     // pick mode. Close the panel first - the input sink swallows everything while it is up - then
     // hand the key to SKSE's remap handler, which gives it to the MCM.
-    m_api->RegisterJSListener(m_view, "hkpPickKey", [](const char* data) {
+    UIHost::Listen(m_view, "hkpPickKey", [](const char* data) {
         const int code = data ? std::atoi(data) : 0;
         if (code <= 0) return;
         if (static_cast<std::uint32_t>(code) == InputHandler::GetSingleton()->GetToggleKey()) {
@@ -603,8 +603,8 @@ void PrismaUIBridge::RegisterJSListeners() {
             return;
         }
         SKSE::log::info("UI: hkpPickKey {}", code);
-        if (auto* task = SKSE::GetTaskInterface()) {
-            task->AddTask([code]() {
+        {
+            UIHost::Game([code]() {
                 if (g_bridge && g_bridge->IsPickManual()) {
                     g_bridge->FinishManualPick(static_cast<std::uint32_t>(code));   // SKSE Menu Framework page
                     return;
@@ -616,32 +616,32 @@ void PrismaUIBridge::RegisterJSListeners() {
     });
 
     // "1" while the pick dialog (name + colour) is up: ESC/Enter belong to the dialog then.
-    m_api->RegisterJSListener(m_view, "hkpPickModal", [](const char* data) {
+    UIHost::Listen(m_view, "hkpPickModal", [](const char* data) {
         if (g_bridge) g_bridge->m_pickModal.store(data && data[0] == '1');
     });
 
     // Settings: open the panel when an MCM asks for a key ("1"/"0").
-    m_api->RegisterJSListener(m_view, "hkpSetPickMode", [](const char* data) {
+    UIHost::Listen(m_view, "hkpSetPickMode", [](const char* data) {
         const bool on = data && data[0] == '1';
         if (g_bridge && g_bridge->m_pickEnabled.exchange(on) != on)
             SKSE::log::info("UI: MCM key picker {}", on ? "ON" : "OFF");
     });
 
     // --Claude 2026-10-01: Settings "Mod keys from config files": "1" / "0", or "rescan".
-    m_api->RegisterJSListener(m_view, "hkpScanConfigs", [](const char* data) {
+    UIHost::Listen(m_view, "hkpScanConfigs", [](const char* data) {
         const std::string s = data ? data : "";
         if (s == "rescan") {
-            RequestScan(true);
+            UIHost::Game([]() { RequestScan(true); });
         } else {
             const bool on = s == "1";
             if (g_scanEnabled.exchange(on) != on) {
                 SKSE::log::info("UI: config-file hotkey scan {}", on ? "ON" : "OFF");
-                if (on) RequestScan(true);
+                if (on) UIHost::Game([]() { RequestScan(true); });
             }
         }
     });
 
-    SKSE::log::info("PrismaUIBridge: JS listeners registered");
+    SKSE::log::info("UIBridge: JS listeners registered");
 }
 
 void PrismaUIBridge::PushInitialState() {
@@ -672,13 +672,13 @@ void PrismaUIBridge::ApplyExternalHotkey(std::uint32_t dik, const std::string& s
 }
 
 void PrismaUIBridge::InvokeJS(const std::string& script) {
-    if (!m_api || !m_view || !m_domReady) return;
-    m_api->Invoke(m_view, script.c_str());
+    if (!m_view || !m_domReady) return;
+    UIHost::Call(m_view, script.c_str());
 }
 
 void PrismaUIBridge::ShowUI() {
-    if (!m_ready || !m_api) return;
-    if (!m_api->IsHidden(m_view)) return;
+    if (!m_ready || !m_view) return;
+    if (m_visible.load()) return;
 
     // --Claude 2026-07-23: aligned to the MANDATED FollowerUI/PEM pattern
     // (feedback-prismaui-blockermenu): blocker (kPausesGame) open FIRST, then Show,
@@ -695,11 +695,12 @@ void PrismaUIBridge::ShowUI() {
     HKPFocusRecovery::Cancel();
     BlockerMenu::Open();
 
-    m_api->Show(m_view);
-    m_api->Focus(m_view, false);
+    m_visible.store(true);
+    UIHost::Show(m_view, true);
+    UIHost::Focus(m_view);
 
     InvokeJS("HKP.show()");
-    SKSE::log::info("PrismaUIBridge: UI shown (blocker pauses, Prisma FocusMenu active)");
+    SKSE::log::info("UIBridge: UI shown on {} (blocker pauses)", UIHost::Name());
     RequestScan(false);   // a key changed in a mod's menu since the last look shows up while it's open
 }
 
@@ -730,7 +731,7 @@ bool PrismaUIBridge::PickJustOpened() const {
 }
 
 void PrismaUIBridge::ShowPick(const std::string& a_infoJson) {
-    if (!m_ready || !m_api || !m_domReady || IsVisible()) return;
+    if (!m_ready || !m_view || !m_domReady || IsVisible()) return;
     m_pickModal.store(false);
     m_pickActive.store(true);
     m_pickOpenedMs.store(SteadyMs());
@@ -740,7 +741,7 @@ void PrismaUIBridge::ShowPick(const std::string& a_infoJson) {
 }
 
 void PrismaUIBridge::ShowManualPick() {
-    if (!m_ready || !m_api || !m_domReady || IsVisible()) return;
+    if (!m_ready || !m_view || !m_domReady || IsVisible()) return;
     PickMode::SmfSetOverlay(true);   // SMF hands every key and click to us until HideUI
     m_pickModal.store(false);
     m_pickActive.store(true);
@@ -757,21 +758,23 @@ void PrismaUIBridge::FinishManualPick(std::uint32_t a_code) {
 }
 
 void PrismaUIBridge::HideUI() {
-    if (!m_ready || !m_api || !IsVisible()) return;
+    if (!m_ready || !m_view || !IsVisible()) return;
+    m_visible.store(false);
     m_textInput.store(false);  // never leave the text-input gate armed after close
     m_pickModal.store(false);
     if (m_pickActive.exchange(false)) SKSE::log::info("PrismaUIBridge: key picker closed");
     if (m_pickManual.exchange(false)) PickMode::SmfSetOverlay(false);
     PickMode::HoldMenuRemap(false);   // SkyUI's remap mode back before any key is sent
     InvokeJS("HKP.hide()");
-    m_api->Unfocus(m_view);
-    m_api->Hide(m_view);
+    UIHost::Unfocus(m_view);
+    UIHost::Show(m_view, false);
 
     if (BlockerMenu::IsOpen()) BlockerMenu::Close();
 
     // --Claude: verify PrismaUI actually let go (focus, FocusMenu, cursor);
     // self-heals the "mouse pointer still on screen after close" report.
-    HKPFocusRecovery::Arm(m_api, m_view);
+    // PrismaUI only: Magelight's UI mode releases the cursor and input itself.
+    if (auto* prisma = UIHost::PrismaApi()) HKPFocusRecovery::Arm(prisma, m_view);
 
     // --Claude 2026-07-25: same fix as TFCam - a paused cursor menu can strand
     // ThirdPersonState with freeRotationEnabled=false, so after close the mouse yaw
@@ -780,8 +783,8 @@ void PrismaUIBridge::HideUI() {
     if (auto* tasks = SKSE::GetTaskInterface()) {
         tasks->AddTask([]() {
             auto* cam = RE::PlayerCamera::GetSingleton();
-            if (!cam) return;
-            auto& third = cam->cameraStates[RE::CameraState::kThirdPerson];
+            if (!cam || REL::Module::IsVR()) return;   // VR keeps its camera states elsewhere
+            auto& third = cam->GetRuntimeData().cameraStates[RE::CameraState::kThirdPerson];
             if (third && cam->currentState.get() == third.get()) {
                 auto* tps = static_cast<RE::ThirdPersonState*>(third.get());
                 if (!tps->freeRotationEnabled) {
@@ -792,22 +795,20 @@ void PrismaUIBridge::HideUI() {
         });
     }
 
-    SKSE::log::info("PrismaUIBridge: UI hidden");
+    SKSE::log::info("UIBridge: UI hidden");
 }
 
 void PrismaUIBridge::ToggleUI() {
-    if (!m_ready || !m_api) return;
+    if (!m_ready || !m_view) return;
     if (IsVisible()) HideUI(); else ShowUI();
 }
 
 bool PrismaUIBridge::IsVisible() const {
-    if (!m_ready || !m_api) return false;
-    return !m_api->IsHidden(m_view);
+    return m_ready && m_visible.load();
 }
 
 bool PrismaUIBridge::IsAnyPrismaViewFocused() const {
-    if (!m_ready || !m_api) return false;
-    return m_api->HasAnyActiveFocus();
+    return m_ready && UIHost::AnyFocus();
 }
 
 void PrismaUIBridge::SendState(const std::string& json) {

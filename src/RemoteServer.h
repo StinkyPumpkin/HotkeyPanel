@@ -32,6 +32,10 @@ namespace RemoteServer {
     // The game side saved (or loaded) hotkeys.json - tablets pick it up on their next poll.
     void PublishState(const std::string& a_json);
 
+    // --Claude 2026-11-20: the folder the panel's page lives in (Magelight or PrismaUI), relative to the game
+    // folder, e.g. "Data/Magelight/HotkeyPanel/views". Set once at start.
+    void SetViewsDir(const std::string& a_relative);
+
     // Skyrim's own gameplay key binds (the same list the panel gets as HKP.setGameKeys).
     void SetGameKeys(const std::string& a_json);
 

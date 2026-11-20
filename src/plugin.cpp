@@ -16,18 +16,15 @@ namespace {
         log->flush_on(spdlog::level::info);
         spdlog::set_default_logger(std::move(log));
         spdlog::set_pattern("[%H:%M:%S.%e] [%l] %v");
-        SKSE::log::info("HotkeyPanelPrisma v1.0.0 - logging initialized");
+        SKSE::log::info("Hotkey Panel " HKP_VERSION " (CommonLibSSE-NG " HKP_COMMONLIB_VERSION ") - logging initialized");
     }
 
     void MessageCallback(SKSE::MessagingInterface::Message* msg) {
         switch (msg->type) {
         case SKSE::MessagingInterface::kPostLoad:
-            SKSE::log::info("PostLoad - initializing Prisma UI bridge...");
-            if (PrismaUIBridge::GetSingleton()->Initialize()) {
-                SKSE::log::info("Prisma UI bridge initialized!");
-            } else {
-                SKSE::log::warn("Prisma UI bridge init failed - PrismaUI.dll may not be installed");
-            }
+            SKSE::log::info("PostLoad - initializing the UI bridge (Magelight UI, else PrismaUI)...");
+            if (!PrismaUIBridge::GetSingleton()->Initialize())
+                SKSE::log::warn("UI bridge init failed - neither Magelight UI nor PrismaUI answered");
             break;
         case SKSE::MessagingInterface::kDataLoaded:
             SKSE::log::info("Data loaded - Hotkey Panel Prisma ready");
@@ -43,7 +40,7 @@ namespace {
 SKSEPluginLoad(const SKSE::LoadInterface* skse) {
     InitializeLogging();
     SKSE::log::info("HotkeyPanelPrisma loading...");
-    SKSE::Init(skse);
+    SKSE::Init(skse, { .log = false });   // NG 9.x: our own logger above
 
     auto messaging = SKSE::GetMessagingInterface();
     if (!messaging->RegisterListener(MessageCallback)) {
