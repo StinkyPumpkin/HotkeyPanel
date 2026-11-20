@@ -625,7 +625,7 @@
         '<rect class="hkp-mz" data-mz="MouseSideRight3" x="106.5" y="116" width="9" height="18" rx="3"/>' +
         '</svg>';
     const MOUSE_ANCHOR = {
-        Mouse1: [30, 48], Mouse2: [90, 48], Mouse3: [60, 22],
+        Mouse1: [40, 24], Mouse2: [80, 24], Mouse3: [60, 22],   // click dots high on the buttons: their lines stay above the tilt lines
         MouseTiltLeft: [51, 36], MouseTiltRight: [69, 36],
         MouseSideLeft1: [54.25, 68.5], MouseSideRight1: [65.75, 68.5],
         MouseSideLeft2: [8.5, 101], MouseSideLeft3: [9, 125],
@@ -664,11 +664,11 @@
                     const kx = left ? mid.left - sr.left + 12 : mid.right - sr.left - 12, ky = mid.bottom - sr.top + 16;
                     pts = bx + ',' + by + ' ' + kx + ',' + ky + ' ' + px + ',' + py;
                 } else if (id === 'MouseSideLeft2' || id === 'MouseSideRight2') {
-                    // the front side button: straight up (or down) beside the body, then across into the button,
-                    // so its line never runs over the back button below it
-                    const edge = left ? ox + 4 * k - 5 : ox + 116 * k + 5;
-                    const kx = left ? Math.min(bx + 15, edge) : Math.max(bx - 15, edge);
-                    pts = bx + ',' + by + ' ' + kx + ',' + by + ' ' + kx + ',' + py + ' ' + px + ',' + py;
+                    // the front side button: angled like the back one, up to just beside the body at the button's
+                    // height, then into it - so its line passes the back button on the outside
+                    const edge = left ? ox + 4 * k - 3 : ox + 116 * k + 3;
+                    const kx = bx + (left ? 10 : -10);
+                    pts = bx + ',' + by + ' ' + kx + ',' + by + ' ' + edge + ',' + py + ' ' + px + ',' + py;
                 } else {
                     const kx = bx + (left ? 10 : -10);
                     pts = bx + ',' + by + ' ' + kx + ',' + by + ' ' + px + ',' + py;
