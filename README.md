@@ -139,4 +139,4 @@ temp+rename + .bak rotation.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+GPL-3.0 — see [LICENSE](LICENSE). Versions released before this change stay under the MIT licence they came with.
