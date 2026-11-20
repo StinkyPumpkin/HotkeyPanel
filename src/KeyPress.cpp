@@ -89,11 +89,23 @@ namespace {
         if (ui->GameIsPaused()) return false;
         if (ui->IsMenuOpen(RE::Console::MENU_NAME)) return false;
         if (ui->IsMenuOpen(RE::CursorMenu::MENU_NAME)) return false;
+        // --Claude 2026-11-21 (PrismaUI check: 1 of 2 fired keys did nothing): PrismaUI's focus shell closes after
+        // our blocker; a key sent before it is gone lands in menu mode
+        if (ui->IsMenuOpen("PrismaUI_FocusMenu")) return false;
         return true;
     }
 
     // -1 unknown / 0 no / 1 yes. Written on the main thread, read by the worker.
     std::atomic<int> g_liveProbe{ -1 };
+    // the key map's top context when the last probe ran (logged with the fire: 0 = gameplay)
+    std::atomic<int> g_contextTop{ -1 };
+
+    int ContextTop() {
+        auto* cm = RE::ControlMap::GetSingleton();
+        if (!cm) return -1;
+        const auto& stack = cm->GetRuntimeData().contextPriorityStack;
+        return stack.empty() ? -1 : static_cast<int>(stack.back());
+    }
 
     constexpr int kProbeIntervalMs = 50;
     constexpr int kMaxGateMs       = 4000;
@@ -101,26 +113,33 @@ namespace {
     void Worker(std::shared_ptr<std::vector<Edge>> a_script, bool a_gameplay) {
         using namespace std::chrono_literals;
 
-        // Gate: poll the real condition on the main thread until input is live.
-        int waitedMs = 0;
+        // Gate: poll the real condition on the main thread until input is live - on two probes in a row
+        // (--Claude 2026-11-21: on PrismaUI the menus close over several frames; one good probe fired too early).
+        int waitedMs = 0, liveRuns = 0;
         bool live = false;
         while (waitedMs < kMaxGateMs) {
             g_liveProbe.store(-1, std::memory_order_relaxed);
             if (auto* task = SKSE::GetTaskInterface()) {
                 task->AddTask([a_gameplay]() {
                     g_liveProbe.store(InputIsLive(a_gameplay) ? 1 : 0, std::memory_order_relaxed);
+                    g_contextTop.store(ContextTop(), std::memory_order_relaxed);
                 });
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(kProbeIntervalMs));
             waitedMs += kProbeIntervalMs;
-            if (g_liveProbe.load(std::memory_order_relaxed) == 1) { live = true; break; }
+            if (g_liveProbe.load(std::memory_order_relaxed) == 1) {
+                if (++liveRuns >= 2) { live = true; break; }
+            } else {
+                liveRuns = 0;
+            }
         }
 
         if (!live) {
             SKSE::log::warn("KeyPress: input still not live after {} ms, dropping the press", waitedMs);
             return;
         }
-        SKSE::log::info("KeyPress: input live after {} ms, firing", waitedMs);
+        SKSE::log::info("KeyPress: input live after {} ms (key map context {}), firing", waitedMs,
+                        g_contextTop.load(std::memory_order_relaxed));
 
         for (const auto& e : *a_script) {
             if (e.delayMs > 0) {

@@ -423,8 +423,10 @@
             }
             g.innerHTML = h;
         }
+        // --Claude 2026-11-21 (PrismaUI check: a thin line ran down the wheel): the disc is solid black and fades as a
+        // whole (opacity). A see-through fill drew the circle as two halves whose shared edge was darkened twice.
         const dark = document.getElementById('hkp-cw-dark');
-        if (dark && cw) dark.setAttribute('fill-opacity', (1 - cw.v).toFixed(3));
+        if (dark && cw) dark.style.opacity = (1 - cw.v).toFixed(3);
     }
     function syncWheel(redraw) {
         if (!cw) return;
@@ -611,6 +613,14 @@
         }, true);
         document.addEventListener('mousemove', geomMove, true);
         document.addEventListener('mouseup', (e) => { if (geomDrag && e.button === 0) endGeomDrag(true); }, true);
+        // --Claude 2026-11-21 (PrismaUI check: two quick presses on the grip did not pair there): the browser's own
+        // double-click resets too
+        document.addEventListener('dblclick', (e) => {
+            if (!e.target || !e.target.closest || !e.target.closest('#hkp-grip')) return;
+            e.preventDefault(); e.stopPropagation();
+            gripDownAt = 0;
+            if (state.settings.panelGeom) resetGeom();
+        }, true);
         window.addEventListener('blur', () => endGeomDrag(false));
         window.addEventListener('resize', applyGeom);
     }
@@ -2524,23 +2534,53 @@
                     return;
                 }
                 e.preventDefault();
-                // ESC/Tab cascade: close whatever is layered on top first.
+                // --Claude 2026-11-21: ESC closes the whole panel, whatever is open on it; TAB closes the top
+                // layer first (the colour wheel, a menu, Settings, colour mode ...), then the panel. The MCM key
+                // picker's naming box keeps ESC = back to the MCM.
+                if (e.key === 'Tab') { tabLayer(); return; }
                 if (pickModal) { closePickModal(); return; }
-                if (!document.getElementById('hkp-modal-color').classList.contains('hkp-hidden'))   { closeColourWheel(); return; }
-                if (look) { closeLook(); return; }
-                if (!document.getElementById('hkp-modal-confirm').classList.contains('hkp-hidden')) { confirmCancel(); return; }
-                if (!document.getElementById('hkp-modal-edit').classList.contains('hkp-hidden'))    { cancelEdit(); return; }
-                if (!document.getElementById('hkp-modal-profile').classList.contains('hkp-hidden')) { cancelProfile(); return; }
-                if (!document.getElementById('hkp-ctx-menu').classList.contains('hkp-hidden'))     { hideContextMenu(); return; }
-                if (fontDDOpen) { closeFontDD(); return; }
-                if (moveMode) { exitMoveMode(); return; }
-                if (colorMode !== null) { exitColorMode(); return; }
-                if (settingsOpen) { toggleSettings(); return; }
-                // Otherwise close the UI
+                closeAllLayers();
                 dispatchToBridge('hkpCloseUI', '1');
                 document.getElementById('hkp-root').classList.add('hkp-hidden');
             }
         });
+    }
+
+    // TAB: the top layer closes, else the panel. The page's own key calls it, and on PrismaUI (where the key does not
+    // always reach the page) the DLL does; when both arrive for one press, the second is dropped.
+    let lastTabAt = 0;
+    function tabLayer() {
+        const now = Date.now();
+        if (now - lastTabAt < 150) return;
+        lastTabAt = now;
+        const open = id => !document.getElementById(id).classList.contains('hkp-hidden');
+        if (pickModal) { closePickModal(); return; }
+        if (open('hkp-modal-color'))   { closeColourWheel(); return; }
+        if (look) { closeLook(); return; }
+        if (open('hkp-modal-confirm')) { confirmCancel(); return; }
+        if (open('hkp-modal-edit'))    { cancelEdit(); return; }
+        if (open('hkp-modal-profile')) { cancelProfile(); return; }
+        if (open('hkp-ctx-menu'))      { hideContextMenu(); return; }
+        if (fontDDOpen) { closeFontDD(); return; }
+        if (moveMode) { exitMoveMode(); return; }
+        if (colorMode !== null) { exitColorMode(); return; }
+        if (settingsOpen) { toggleSettings(); return; }
+        dispatchToBridge('hkpCloseUI', '1');
+        document.getElementById('hkp-root').classList.add('hkp-hidden');
+    }
+    // everything layered on the panel, closed (ESC, and whenever the panel hides)
+    function closeAllLayers() {
+        const open = id => !document.getElementById(id).classList.contains('hkp-hidden');
+        if (open('hkp-modal-color'))   closeColourWheel();
+        if (look) closeLook();
+        if (open('hkp-modal-confirm')) confirmCancel();
+        if (open('hkp-modal-edit'))    cancelEdit();
+        if (open('hkp-modal-profile')) cancelProfile();
+        hideContextMenu(); hideTooltip();
+        if (fontDDOpen) closeFontDD();
+        if (moveMode) exitMoveMode();
+        if (colorMode !== null) exitColorMode();
+        if (settingsOpen) toggleSettings();
     }
 
     // the key event as the panel stores key names ('F24', 'KeyQ'; F13-F24 from e.key / keyCode when there is no code)
@@ -3206,11 +3246,9 @@
             endGeomDrag(false);
             document.getElementById('hkp-root').classList.add('hkp-hidden');
             if (pick) endPick();
-            hideContextMenu(); hideTooltip();
-            if (moveMode) exitMoveMode();
-            if (colorMode) exitColorMode();
-            if (settingsOpen) toggleSettings();
+            closeAllLayers();   // --Claude 2026-11-21: open dialogs too (the colour wheel stayed up for the next open)
         },
+        tabLayer,
         close(e) {
             // Stop the click event so its mouseup doesn't propagate to the
             // game world after the BlockerMenu pops. Without this, LMB-up

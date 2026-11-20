@@ -149,9 +149,15 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
             if (button->device.get() != RE::INPUT_DEVICE::kKeyboard) continue;
 
             const auto code = button->GetIDCode();
-            // ESC/Tab always close.
-            if (code == kEscape || code == kTab) {
+            // --Claude 2026-11-21: ESC closes the whole panel; TAB closes the page's top layer first (the page
+            // decides, and closes the panel when nothing is open on it). Here = PrismaUI, where the page does not get
+            // these keys itself (under Magelight the page has them and this sink sees nothing).
+            if (code == kEscape) {
                 bridge->HideUI();
+                break;
+            }
+            if (code == kTab) {
+                bridge->TabLayer();
                 break;
             }
             // --Claude 2026-09-28: the panel's own key is never picked (a second F24 press 0.5 s after

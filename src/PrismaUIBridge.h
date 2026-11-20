@@ -69,6 +69,10 @@ public:
     // --Claude 2026-10-01: a HotkeyScan result (mods' keys found in their config files).
     void SetScannedHotkeys(const std::string& json) { InvokeJS("HKP.setScannedHotkeys(" + json + ")"); }
 
+    // --Claude 2026-11-21: TAB on the open panel - the page closes its top layer (the colour wheel, a menu, Settings
+    // ...), or the panel when nothing is open on it. ESC closes the whole panel (HideUI).
+    void TabLayer() { InvokeJS("HKP.tabLayer()"); }
+
     // --Claude 2026-11-20: the user's own key pictures (UserIcons) for the icon picker; false = page not ready.
     bool SetUserIcons(const std::string& json) {
         if (!m_domReady) return false;
