@@ -534,14 +534,20 @@
     // button state, so a drag runs from our mousedown to our mouseup; Unfocus sends a move to (0,0); the DLL
     // calls hide() before Unfocus, and hide() drops a running drag.
     // ---------------------------------------------------------------
-    const GEOM_MARGIN = 6, GEOM_MIN = [760, 420];
+    // --Claude 2026-11-20 in-game test: 6 px from the screen edge was too close at 4K to grab the grip or the
+    // edge again; the margin now grows with the screen (13 px at 1080p, 26 px at 4K)
+    const GEOM_MIN = [760, 420];
+    function geomMargin(W, H) { return Math.max(8, Math.round(Math.min(W, H) * 0.012)); }
+    // the page's own size; the smaller of the two in case the host reports a bigger window than it shows
+    function viewW() { const a = window.innerWidth, b = document.documentElement.clientWidth; return a && b ? Math.min(a, b) : (a || b); }
+    function viewH() { const a = window.innerHeight, b = document.documentElement.clientHeight; return a && b ? Math.min(a, b) : (a || b); }
     let geomDrag = null, gripDownAt = 0;
     function geomDefault(W, H) {
         const k = (Number(state.settings.panelScale) || 100) / 100, w = W * 0.92 * k, h = H * 0.94 * k;
         return { x: (W - w) / 2, y: (H - h) / 2, w, h };
     }
     function geomClamp(g, W, H) {
-        const m = GEOM_MARGIN;
+        const m = geomMargin(W, H);
         const w = Math.max(Math.min(GEOM_MIN[0], W - 2 * m), Math.min(g.w, W - 2 * m));
         const h = Math.max(Math.min(GEOM_MIN[1], H - 2 * m), Math.min(g.h, H - 2 * m));
         return { x: Math.min(Math.max(g.x, m), W - w - m), y: Math.min(Math.max(g.y, m), H - h - m), w, h };
@@ -557,7 +563,7 @@
     }
     function applyGeom() {
         if (REMOTE || geomDrag) return;
-        const W = window.innerWidth, H = window.innerHeight, f = savedGeom();
+        const W = viewW(), H = viewH(), f = savedGeom();
         setRootRect(geomClamp(f ? { x: f.x * W, y: f.y * H, w: f.w * W, h: f.h * H } : geomDefault(W, H), W, H));
     }
     function resetGeom() {
@@ -610,13 +616,15 @@
             document.body.classList.add(d.kind === 'move' ? 'hkp-dragging' : 'hkp-resizing');
             hideContextMenu(); hideTooltip();
         }
-        const W = window.innerWidth, H = window.innerHeight;
+        const W = viewW(), H = viewH();
         if (d.kind === 'move') {
             d.last = geomClamp({ x: d.g.x + dx, y: d.g.y + dy, w: d.g.w, h: d.g.h }, W, H);
+            // stopped by an edge: carry on from there, so moving back moves it at once (it overshot before)
+            d.g.x = d.last.x - dx; d.g.y = d.last.y - dy;
             setRootRect(d.last);
         } else {
             // the top-left corner stays; the size runs from the minimum to the screen edge
-            const m = GEOM_MARGIN, maxW = W - d.g.x - m, maxH = H - d.g.y - m;
+            const m = geomMargin(W, H), maxW = W - d.g.x - m, maxH = H - d.g.y - m;
             d.last = { x: d.g.x, y: d.g.y,
                        w: Math.max(Math.min(GEOM_MIN[0], maxW), Math.min(d.g.w + dx, maxW)),
                        h: Math.max(Math.min(GEOM_MIN[1], maxH), Math.min(d.g.h + dy, maxH)) };
@@ -637,7 +645,7 @@
         if (gh) gh.style.display = 'none';
         if (!d.moved) return;   // a plain click on the edge or the grip
         if (!commit || !d.last) { applyGeom(); return; }
-        const W = window.innerWidth, H = window.innerHeight, g = d.last;
+        const W = viewW(), H = viewH(), g = d.last;
         setRootRect(g);
         state.settings.panelGeom = { x: +(g.x / W).toFixed(4), y: +(g.y / H).toFixed(4), w: +(g.w / W).toFixed(4), h: +(g.h / H).toFixed(4) };
         if (d.kind === 'size') layoutKeyboard();
