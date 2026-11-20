@@ -1,5 +1,6 @@
-// GKeysInputBridge — makes keyboard F13-F24 (e.g. Logitech G-keys remapped via
-// G HUB) visible to EVERY Skyrim mod as ordinary, ENGINE-GENERATED key events.
+// GKeysInputBridge — makes keyboard F13-F24 (G-keys set to send them in the keyboard's own software:
+// Corsair iCUE, Logitech G HUB, Razer Synapse, ...) visible to EVERY Skyrim mod as ordinary,
+// ENGINE-GENERATED key events.
 //
 // WHY: Skyrim's BSWin32KeyboardDevice only creates ButtonEvents for scancodes
 // registered in its deviceButtons map, and that roster stops at F12 (0x58).
