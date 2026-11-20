@@ -42,3 +42,6 @@ build_log*.txt
 
 # Local browser mockup (serves dist with the user's own hotkeys) - never pushed
 /mockup/
+
+# python caches
+__pycache__/
