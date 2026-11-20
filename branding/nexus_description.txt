@@ -65,4 +65,4 @@ Copy the HotkeyPanelEditor folder into Mod Organizer 2's plugins folder and rest
 [/list]
 
 [size=4][b]Permissions[/b][/size]
-Open source (MIT): [url=https://github.com/StinkyPumpkin/HotkeyPanel]github.com/StinkyPumpkin/HotkeyPanel[/url]. Use, change and share freely.
+Open source (GPL-3.0): [url=https://github.com/StinkyPumpkin/HotkeyPanel]github.com/StinkyPumpkin/HotkeyPanel[/url]. Use, change and share it; versions you share stay GPL-3.0 with their source.
