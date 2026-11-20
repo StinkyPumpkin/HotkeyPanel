@@ -67,6 +67,8 @@
             }
             window.HKP.setGameKeys(await (await fetch('/api/gamekeys')).json());
             window.HKP.setFonts(await (await fetch('/api/fonts')).json());
+            // keys from settings files of mods MO2 does not load stay off the panel, as in game
+            if (window.HKP.setInstalledNames) window.HKP.setInstalledNames(await (await fetch('/api/installed')).json());
             window.HKP.show();
             showBanner(st.path || 'hotkeys.json');
         } catch (e) {

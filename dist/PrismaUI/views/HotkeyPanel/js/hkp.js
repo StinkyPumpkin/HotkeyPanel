@@ -534,7 +534,7 @@
     }
 
     // ---------------------------------------------------------------
-    // --Claude 2026-11-20: move the panel by its edge or its title, resize it from the corner grip (as in
+    // --Claude 2026-11-20: move the panel by its title, resize it from the corner grip (as in
     // PEM). Saved as screen fractions in settings.panelGeom; null = centred at the old "Panel size". A resize
     // shows an outline and lays the keys out once, on release; a double press on the grip = the default again.
     // No transform on the panel (in PEM a transform made clicks land off). PrismaUI: mousemove carries no
@@ -577,13 +577,10 @@
         state.settings.panelGeom = null;
         applyGeom(); layoutKeyboard(); save();
     }
-    const GEOM_HANDLES = ['hkp-main', 'hkp-bottom', 'hkp-keyboard', 'hkp-kb-main', 'hkp-kb-nav', 'hkp-kb-numpad',
-                          'hkp-row', 'hkp-row-gap', 'hkp-nav-empty', 'hkp-kb-title', 'hkp-drag-glyph'];
+    // --Claude 2026-11-20: the panel moves only by its title in the top-right corner (the grip dots and
+    // "Hotkey Panel"); the edge and the gaps between the key blocks no longer move it.
     function isGeomHandle(el) {
-        if (!el || !el.closest) return false;
-        if (el.id === 'hkp-root') return true;
-        if (el.closest('.hkp-kb-title')) return true;
-        return GEOM_HANDLES.some(c => el.classList && el.classList.contains(c));
+        return !!(el && el.closest && el.closest('.hkp-kb-title'));
     }
     function wireGeom() {
         if (REMOTE) return;
@@ -2290,7 +2287,7 @@
     function rebuildExtIndex() {
         extByKey = {};
         for (const [src, e] of Object.entries(state.external || {})) {
-            if (!e || !e.key) continue;
+            if (!e || !e.key || e.orphan) continue;
             (extByKey[e.key] = extByKey[e.key] || []).push([src, e]);
         }
         // A key found in a mod's config file that the mod's MCM also announced (MCM Unlocked,
@@ -2305,6 +2302,67 @@
     function normOwner(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
     function sameOwner(a, b) {
         return !!a && !!b && (a === b || (a.length >= 4 && b.includes(a)) || (b.length >= 4 && a.includes(b)));
+    }
+
+    // --Claude 2026-11-20: keys from a settings file whose mod is gone. A settings copy outlives its mod
+    // (a settings mod, MO2's overwrite), so the scan still finds it. The game sends what is loaded (plugin
+    // files and SKSE DLLs, by name; the offline editor sends MO2's); a key whose owner is none of them is
+    // marked orphan: off the panel and out of the conflicts, still in hotkeys.json in case the mod returns.
+    // Owner = the file's folder under SKSE/Plugins, else the file name. Generous on purpose - a stale key
+    // shown beats a real one hidden: "PlayerEquipmentManager" matches PEMS.esp by its initials. A key from
+    // a mod's own MCM/Config folder is never an orphan: that folder comes with the mod.
+    let installedIdx = null, installedMemo = new Map();   // [[normalised name, initials]]; null = hide nothing
+    function nameInitials(s) {
+        return String(s || '').replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+            .split(/[^A-Za-z0-9]+/).filter(Boolean).map(w => w[0]).join('').toLowerCase();
+    }
+    function nearName(a, b) {
+        if (!a || !b) return false;
+        if (a === b) return true;
+        const [s, l] = a.length <= b.length ? [a, b] : [b, a];
+        return (s.length >= 3 && l.startsWith(s)) || (s.length >= 4 && l.includes(s));
+    }
+    function setInstalled(list) {
+        installedIdx = Array.isArray(list) && list.length ? list.map(n => [normOwner(n), nameInitials(n)]) : null;
+        installedMemo = new Map();
+    }
+    function scanOwnerKey(e) {
+        const parts = String((e && e.where) || '').split('  ')[0].split('/');
+        if (parts.length > 3 && parts[0].toLowerCase() === 'skse') {
+            const dir = parts[2].toLowerCase(), box = dir === 'storageutildata' || dir === 'jcontainers';
+            if (box && parts.length > 4) return parts[3];
+            if (!box) return parts[2];
+        }
+        return (parts[parts.length - 1] || '').replace(/\.[^.]*$/, '');
+    }
+    function ownerInstalled(e) {
+        if (!installedIdx || !e || e.mcm) return true;
+        const raw = scanOwnerKey(e), k = normOwner(raw);
+        if (k.length < 3) return true;
+        if (installedMemo.has(k)) return installedMemo.get(k);
+        const ki = nameInitials(raw);
+        const ok = installedIdx.some(([n, ni]) => nearName(n, k) || (ni.length >= 3 && nearName(ni, k)) ||
+            (ki.length >= 3 && n.length >= 3 && (n.startsWith(ki) || ki === ni)));
+        installedMemo.set(k, ok);
+        return ok;
+    }
+    // Re-marks every scanned key; true when one changed.
+    function markOrphans() {
+        let changed = false;
+        for (const [s, e] of Object.entries(state.external || {})) {
+            if (!s.startsWith('SCAN:') || !e) continue;
+            const orphan = !ownerInstalled(e);
+            if (!!e.orphan === orphan) continue;
+            changed = true;
+            if (orphan) e.orphan = true; else delete e.orphan;
+        }
+        return changed;
+    }
+    // The offline editor: MO2's loaded plugins and DLLs.
+    function setInstalledNames(list) {
+        setInstalled(list);
+        if (markOrphans()) refreshAll();
+        syncScanStatus();
     }
 
     // --Claude 2026-10-01: keys found in mods' config files (HotkeyScan.cpp). One scan result
@@ -2325,6 +2383,7 @@
         if (!state.scanHidden) state.scanHidden = {};
         const old = {};
         for (const [s, e] of Object.entries(state.external)) if (s.startsWith('SCAN:')) { old[s] = e; delete state.external[s]; }
+        if (Array.isArray(r.installed)) setInstalled(r.installed);
         let shown = 0;
         if (state.settings.scanConfigs !== false) {
             r.entries.forEach(en => {
@@ -2332,12 +2391,12 @@
                 if (!code || !en.src || state.scanHidden[en.src]) return;
                 const mods = (en.mods || []).map(d => DIK_TO_CODE[d]).filter(Boolean);
                 const who = shortOwner(en.owner);
-                state.external[en.src] = {
+                const e = state.external[en.src] = {
                     key: code, label: en.label ? who + ': ' + en.label : en.owner,
                     color: en.mcm ? 6 : 5, move: false, scan: true,
                     owner: en.owner, where: en.where, mcm: !!en.mcm, ctx: !!en.ctx, mods
                 };
-                shown++;
+                if (!ownerInstalled(e)) e.orphan = true; else shown++;
             });
         }
         scanInfo = { found: r.entries.length, shown, files: r.files, ms: r.ms };
@@ -2423,10 +2482,21 @@
             restore.classList.toggle('hkp-hidden', !hidden);
             restore.textContent = 'Restore removed (' + hidden + ')';
         }
+        el.title = '';
         if (state.settings.scanConfigs === false) { el.textContent = 'Off.'; return; }
-        if (!scanInfo) { el.textContent = REMOTE ? 'Scanned by the game.' : 'Not scanned yet.'; return; }
+        // keys left off because their mod is not installed, by owner
+        const gone = {};
+        let goneKeys = 0;
+        for (const [s, e] of Object.entries(state.external || {}))
+            if (s.startsWith('SCAN:') && e && e.orphan) { const o = scanOwnerKey(e) || e.owner; gone[o] = (gone[o] || 0) + 1; goneKeys++; }
+        const goneNames = Object.keys(gone).sort((a, b) => a.localeCompare(b));
+        const goneText = goneKeys ? ' Not shown: ' + goneKeys + ' keys from settings files of mods that are not installed (' +
+            (goneNames.length > 8 ? goneNames.slice(0, 8).join(', ') + ' and ' + (goneNames.length - 8) + ' more' : goneNames.join(', ')) + ').' : '';
+        if (goneKeys) el.title = goneNames.map(n => n + ' (' + gone[n] + ')').join('\n');
+        if (!scanInfo) { el.textContent = (REMOTE || window.HKP_OFFLINE ? 'Scanned by the game.' : 'Not scanned yet.') + goneText; return; }
+        const other = scanInfo.found - scanInfo.shown - goneKeys;
         el.textContent = scanInfo.shown + ' keys from ' + scanInfo.files + ' files (' + scanInfo.ms + ' ms)' +
-            (scanInfo.found > scanInfo.shown ? ', ' + (scanInfo.found - scanInfo.shown) + ' hidden or not on the panel' : '') + '.';
+            (other > 0 ? ', ' + other + ' hidden or not on the panel' : '') + '.' + goneText;
     }
     // The user's name/colour for a source; created on demand when `create`.
     function customFor(src, create) {
@@ -2706,7 +2776,7 @@
     // Public API
     // ---------------------------------------------------------------
     window.HKP = {
-        setExternalHotkey, setGameKeys, setScannedHotkeys, setScanConfigs, rescanConfigs, restoreScanHidden,
+        setExternalHotkey, setGameKeys, setScannedHotkeys, setScanConfigs, rescanConfigs, restoreScanHidden, setInstalledNames,
         startPick, endPick, setPickMode,
         confirmPick: () => confirmPick(),
         cancelPick: () => closePickModal(),

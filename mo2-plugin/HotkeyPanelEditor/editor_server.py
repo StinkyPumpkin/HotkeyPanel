@@ -37,12 +37,13 @@ def file_token(path):
 class Setup:
     """Everything the server needs, worked out on MO2's own thread before the server uses it."""
 
-    def __init__(self, files, state_read, state_write, game_keys, fonts):
+    def __init__(self, files, state_read, state_write, game_keys, fonts, installed=None):
         self.files = files                # 'css/hkp.css' -> real path (the winning mod's file)
         self.state_read = state_read      # real path of the hotkeys.json the game would read ('' = none yet)
         self.state_write = state_write    # where a save goes (that file, or MO2's overwrite folder)
         self.game_keys = game_keys        # [[dik, "Activate"], ...]
         self.fonts = fonts                # installed font family names
+        self.installed = installed or []  # loaded plugin files and SKSE DLLs, by name (keys of removed mods hide)
 
 
 class EditorServer:
@@ -151,6 +152,8 @@ class EditorServer:
                     return self._json(200, s.game_keys)
                 if path == '/api/fonts':
                     return self._json(200, s.fonts)
+                if path == '/api/installed':
+                    return self._json(200, s.installed)
                 rel = path.lstrip('/').replace('\\', '/')
                 real = s.files.get(rel) or s.files.get(rel.lower())
                 if not real or '..' in rel:
@@ -201,6 +204,22 @@ def read_game_keys(paths):
                             out.append([v, cols[0]])
         return out
     return []
+
+
+def installed_names(data_dirs, plugin_names):
+    """What the game would load, by name: the active plugin files and every SKSE DLL in these folders.
+    The page leaves off keys from a settings file whose mod is none of these (the game sends its own list)."""
+    out = [os.path.splitext(n)[0] for n in plugin_names if n]
+    if not out:
+        return []   # no plugin list: hide nothing rather than everything
+    for d in data_dirs:
+        p = os.path.join(d, 'SKSE', 'Plugins')
+        try:
+            names = os.listdir(p)
+        except OSError:
+            continue
+        out.extend(os.path.splitext(n)[0] for n in names if n.lower().endswith('.dll'))
+    return out
 
 
 def installed_fonts():

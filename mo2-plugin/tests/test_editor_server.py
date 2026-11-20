@@ -97,6 +97,11 @@ class T(unittest.TestCase):
     def test_gamekeys_and_fonts(self):
         self.assertEqual(json.loads(get(self.u + 'api/gamekeys')[1]), [[18, 'Activate']])
         self.assertEqual(json.loads(get(self.u + 'api/fonts')[1]), ['Segoe UI'])
+        self.assertEqual(json.loads(get(self.u + 'api/installed')[1]), [])
+
+    def test_installed_list_served(self):
+        self.srv.update(es.Setup(page_files(), self.state, self.state, [], [], ['Skyrim', 'PEMS']))
+        self.assertEqual(json.loads(get(self.u + 'api/installed')[1]), ['Skyrim', 'PEMS'])
 
     def test_first_save_into_overwrite(self):
         ov = os.path.join(self.tmp, 'overwrite', 'SKSE', 'Plugins', 'HotkeyPanel', 'hotkeys.json')
@@ -115,6 +120,17 @@ class Helpers(unittest.TestCase):
         with open(p, 'w') as f:
             f.write('// Main Gameplay\nForward\t0x11\t0xff\nScreenshot\t0xb7,0x9d\t0xff\n// Menu Mode\nAccept\t0x1c\t0xff\n')
         self.assertEqual(es.read_game_keys(['', p]), [[0x11, 'Forward'], [0xb7, 'Screenshot'], [0x9d, 'Screenshot']])
+        shutil.rmtree(tmp)
+
+    def test_installed_names(self):
+        tmp = tempfile.mkdtemp()
+        os.makedirs(os.path.join(tmp, 'a', 'SKSE', 'Plugins', 'sub'))
+        for n in ('TFCam.dll', 'TFCam.ini', 'readme.txt'):
+            open(os.path.join(tmp, 'a', 'SKSE', 'Plugins', n), 'w').close()
+        open(os.path.join(tmp, 'a', 'SKSE', 'Plugins', 'sub', 'Deep.dll'), 'w').close()
+        got = es.installed_names([os.path.join(tmp, 'a'), os.path.join(tmp, 'missing')], ['Skyrim.esm', 'PEMS.esp'])
+        self.assertEqual(got, ['Skyrim', 'PEMS', 'TFCam'])   # top-level DLLs only, like the game's list
+        self.assertEqual(es.installed_names([os.path.join(tmp, 'a')], []), [])   # no plugin list = hide nothing
         shutil.rmtree(tmp)
 
 

@@ -246,6 +246,127 @@
         document.body.appendChild(toastEl);
     }
 
+    // ---------------------------------------------------------------
+    // Screen care (--Claude 2026-11-20): a tablet that shows the panel all day must not keep the same
+    // bright picture in the same pixels for hours (OLED burn-in). Every minute the whole panel moves a
+    // few pixels around a small ring, and after a while with no touch a black layer dims it. The layer
+    // takes no touches: a tap on a key while it is dim fires that key at once and lights the screen up.
+    // Where the browser allows it (a secure address), Wake Lock keeps the screen from going off.
+    // All this tablet's own (localStorage), like the label size.
+    // ---------------------------------------------------------------
+    const SHIFT_RING = [[0, 0], [2, -2], [3, 0], [2, 2], [0, 3], [-2, 2], [-3, 0], [-2, -2], [0, -3]];
+    const SHIFT_EVERY_MS = 60000;
+    const DIM_AFTER = [[30, '30 s'], [60, '1 min'], [120, '2 min'], [300, '5 min'], [900, '15 min'], [0, 'Never']];
+    const DIM_TO = [[60, '60%'], [40, '40%'], [25, '25%'], [10, '10%']];
+    const care = {
+        shift: stored('careShift', '1') !== '0',
+        dimAfter: Number(stored('careDimAfter', 60)),
+        dimTo: Number(stored('careDimTo', 40))
+    };
+    let shiftStep = 0, lastTouch = Date.now(), dimmed = false, dimEl = null, wakeLock = null;
+
+    function applyShift() {
+        const [x, y] = care.shift ? SHIFT_RING[shiftStep % SHIFT_RING.length] : [0, 0];
+        document.documentElement.style.setProperty('--hkp-r-sx', x + 'px');
+        document.documentElement.style.setProperty('--hkp-r-sy', y + 'px');
+    }
+    function setDim(on) {
+        if (!dimEl || dimmed === on) return;
+        dimmed = on;
+        dimEl.classList.toggle('hkp-r-wake', !on);
+        dimEl.style.opacity = on ? String(1 - care.dimTo / 100) : '0';
+    }
+    function touched() {
+        lastTouch = Date.now();
+        setDim(false);
+        holdScreen();
+    }
+    async function holdScreen() {
+        if (wakeLock || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+        try {
+            wakeLock = await navigator.wakeLock.request('screen');
+            wakeLock.addEventListener('release', () => { wakeLock = null; });
+        } catch (_) { wakeLock = null; }
+    }
+    function careStatus() {
+        const el = document.getElementById('hkp-r-care-status');
+        if (!el) return;
+        el.textContent = ('wakeLock' in navigator)
+            ? 'This browser keeps the screen on while the panel is open.'
+            : 'This browser cannot keep the screen on from a home-network address: set the tablet\'s screen timeout to the longest it has (or Never).';
+    }
+    function startScreenCare() {
+        dimEl = document.createElement('div');
+        dimEl.id = 'hkp-r-dim';
+        document.body.appendChild(dimEl);
+        document.body.classList.toggle('hkp-r-shift', care.shift);
+        applyShift();
+        // capture: before the panel's own handlers, so a tap always counts
+        for (const ev of ['pointerdown', 'touchstart', 'keydown', 'wheel'])
+            document.addEventListener(ev, touched, { capture: true, passive: true });
+        document.addEventListener('pointermove', (e) => { if (e.pointerType === 'mouse') touched(); }, { capture: true, passive: true });
+        document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') touched(); });
+        setInterval(() => { if (care.shift) { shiftStep++; applyShift(); } }, SHIFT_EVERY_MS);
+        setInterval(() => {
+            if (care.dimAfter > 0 && Date.now() - lastTouch > care.dimAfter * 1000) setDim(true);
+        }, 1000);
+        holdScreen();
+    }
+    function careSelect(id, options, value, onChange) {
+        const sel = document.createElement('select');
+        sel.id = id;
+        sel.className = 'hkp-r-select';
+        for (const [v, label] of options) {
+            const o = document.createElement('option');
+            o.value = String(v);
+            o.textContent = label;
+            sel.appendChild(o);
+        }
+        sel.value = String(value);
+        if (sel.value !== String(value)) sel.value = String(options[1][0]);
+        sel.addEventListener('change', () => onChange(Number(sel.value)));
+        return sel;
+    }
+    function addCareSetting() {
+        const after = document.getElementById('hkp-row-labelsize');
+        if (!after) return;
+        const row = document.createElement('div');
+        row.className = 'hkp-setting-row';
+        row.id = 'hkp-row-care';
+        row.innerHTML =
+            '<div class="hkp-setting-label">Screen care (this tablet)' +
+            '<div class="hkp-setting-hint">For a screen that stays on all the time: the panel moves a few pixels every minute, ' +
+            'and dims when nobody has touched it for a while. A tap still fires its key while dim, and lights the screen up again.</div>' +
+            '<div class="hkp-setting-hint hkp-remote-status" id="hkp-r-care-status"></div></div>' +
+            '<div class="hkp-setting-control"></div>';
+        const ctl = row.querySelector('.hkp-setting-control');
+        const shift = document.createElement('label');
+        shift.className = 'hkp-check';
+        shift.innerHTML = '<input type="checkbox" id="hkp-r-shift"><span>Move a little</span>';
+        const box = shift.querySelector('input');
+        box.checked = care.shift;
+        box.addEventListener('change', () => {
+            care.shift = box.checked;
+            store('careShift', care.shift ? '1' : '0');
+            document.body.classList.toggle('hkp-r-shift', care.shift);
+            applyShift();
+            relayout();
+        });
+        const label = (text, el) => {
+            const l = document.createElement('label');
+            l.className = 'hkp-check';
+            const s = document.createElement('span');
+            s.textContent = text;
+            l.append(s, el);
+            return l;
+        };
+        ctl.append(shift,
+            label('Dim after', careSelect('hkp-r-dimafter', DIM_AFTER, care.dimAfter, (v) => { care.dimAfter = v; store('careDimAfter', v); touched(); })),
+            label('Dim to', careSelect('hkp-r-dimto', DIM_TO, care.dimTo, (v) => { care.dimTo = v; store('careDimTo', v); touched(); })));
+        after.after(row);
+        careStatus();
+    }
+
     // The label-size setting here is this device's own; say so, and let it go smaller.
     function tuneLabelSetting() {
         const slider = document.getElementById('hkp-label-size');
@@ -258,6 +379,8 @@
     window.addEventListener('load', () => {
         addTopbarBits();
         tuneLabelSetting();
+        addCareSetting();
+        startScreenCare();
         setConn(false);
         loadGameKeys();
         poll();

@@ -1012,6 +1012,35 @@ namespace HotkeyScan
             out += '"';
         }
 
+        // --Claude 2026-11-20: what is loaded - plugin files and SKSE DLLs, by name. A settings file stays
+        // behind when its mod is removed (a settings mod, overwrite); the page hides keys whose owner is
+        // none of these. Empty when the plugin list is not there yet: then the page hides nothing.
+        std::vector<std::string> LoadedNames(const fs::path& data)
+        {
+            std::vector<std::string> out;
+            auto*                    dh = RE::TESDataHandler::GetSingleton();   // non-const: NG's const BSSimpleList::begin() does not compile
+            if (!dh) return out;
+            for (const auto* f : dh->files) {
+                if (!f) continue;
+                std::string_view n = f->GetFilename();
+                if (const auto dot = n.rfind('.'); dot != std::string_view::npos) n = n.substr(0, dot);
+                if (!n.empty()) out.emplace_back(n);
+            }
+            if (out.empty()) return out;
+            std::error_code ec;
+            for (fs::directory_iterator it(data / "SKSE" / "Plugins", fs::directory_options::skip_permission_denied, ec), end; !ec && it != end; it.increment(ec)) {
+                std::error_code e2;
+                if (!it->is_regular_file(e2)) continue;
+                try {
+                    const auto& p = it->path();
+                    if (Lower(p.extension().string()) == ".dll") out.push_back(p.stem().string());
+                } catch (...) {
+                    continue;
+                }
+            }
+            return out;
+        }
+
         std::string RunScan()
         {
             const auto t0 = std::chrono::steady_clock::now();
@@ -1020,6 +1049,7 @@ namespace HotkeyScan
 
             const auto handled = ScanMcmHelper(scan);
             ScanFiles(scan, handled);
+            const auto loaded = LoadedNames(scan.data);
 
             // one entry per mod + key (+ modifiers): the same key in a mod's two files (e.g. an
             // ini next to its Settings copy) shows once
@@ -1051,6 +1081,11 @@ namespace HotkeyScan
                 JsonStr(out, e.where);
                 out += e.mcm ? ",\"mcm\":true" : ",\"mcm\":false";
                 out += Contextual(e) ? ",\"ctx\":true}" : "}";
+            }
+            out += "],\"installed\":[";
+            for (std::size_t i = 0; i < loaded.size(); ++i) {
+                if (i) out += ',';
+                JsonStr(out, loaded[i]);
             }
             out += "]}";
             SKSE::log::info("HotkeyScan: {} hotkeys from {} files in {} ms", unique.size(), scan.files, ms);

@@ -98,7 +98,23 @@ class HotkeyPanelEditor(mobase.IPluginTool):
         write = read or os.path.join(org.overwritePath(), STATE_REL)
         keys_paths = [os.path.join(es.documents_dir(), 'My Games', 'Skyrim Special Edition', 'ControlMap_Custom.txt'),
                       org.resolvePath('Interface/Controls/PC/controlmap.txt') or '']
-        return es.Setup(self._page_files(), read, write, es.read_game_keys(keys_paths), es.installed_fonts())
+        return es.Setup(self._page_files(), read, write, es.read_game_keys(keys_paths), es.installed_fonts(),
+                        self._installed())
+
+    # loaded plugins + SKSE DLLs, so keys from a removed mod's left-over settings file stay off the panel
+    def _installed(self):
+        try:
+            pl = self._organizer.pluginList()
+            active = [str(n) for n in pl.pluginNames() if pl.state(n) == mobase.PluginState.ACTIVE]
+            dirs = []
+            try:
+                dirs.append(self._organizer.managedGame().dataDirectory().absolutePath())
+            except Exception:
+                pass
+            return es.installed_names(dirs + self._active_mod_dirs(), active)
+        except Exception:
+            _log.exception('Hotkey Panel Editor: could not list the loaded plugins')
+            return []
 
     def display(self):
         try:

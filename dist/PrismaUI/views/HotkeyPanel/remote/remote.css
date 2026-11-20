@@ -84,7 +84,13 @@ input, textarea {
 /* Folded sections (top-bar buttons, remembered on this device). The colour bar stays up while
    colour mode is on, since that is where it ends. */
 body.hkp-r-no-swatches .hkp-swatch-bar:not(.hkp-active) { display: none !important; }
-body.hkp-r-no-bottom .hkp-bottom { display: none !important; }
+/* --Claude 2026-11-20: the top bar (Settings, these fold buttons) now lives in the bottom row, so folding
+   "Mouse & profiles" keeps that row as one thin strip with only the controls in it */
+body.hkp-r-no-bottom .hkp-bottom { flex: 0 0 auto !important; }
+body.hkp-r-no-bottom .hkp-bottom > :not(.hkp-side) { display: none !important; }
+body.hkp-r-no-bottom .hkp-side { flex: 1 1 auto !important; flex-direction: row !important; align-items: center; gap: 14px; }
+body.hkp-r-no-bottom .hkp-side .hkp-topbar { flex: 1 1 auto; }
+body.hkp-r-no-bottom .hkp-side .hkp-swatch-bar { flex: 0 1 auto; }
 .hkp-topbar-btn.hkp-r-on { border-color: var(--hkp-gold) !important; color: var(--hkp-gold-hi) !important; }
 
 /* Labels shrink to fit (remote.js) instead of breaking words; only a label that still does not
@@ -96,3 +102,39 @@ body.hkp-r-no-bottom .hkp-bottom { display: none !important; }
 
 /* --Claude 2026-11-20: the close button moved to the keyboard corner */
 .hkp-kb-close { display: none !important; }
+/* the title moves the panel in game; here the panel is the whole screen */
+.hkp-kb-title { cursor: default !important; }
+.hkp-kb-title .hkp-drag-glyph { display: none !important; }
+
+/* --Claude 2026-11-20: screen care for a tablet that stays on (remote.js). The panel sits 3 px in from
+   each edge and wanders around inside that frame; a black layer dims it when nobody touches it. The
+   layer never takes a touch: a tap goes straight to the key under it. */
+body.hkp-r-shift #hkp-root {
+    top: calc(3px + var(--hkp-r-sy, 0px)) !important;
+    left: calc(3px + var(--hkp-r-sx, 0px)) !important;
+    width: calc(100vw - 6px) !important;
+    height: calc(100vh - 6px) !important;
+    height: calc(100dvh - 6px) !important;
+    transition: top 2s ease, left 2s ease;
+}
+#hkp-r-dim {
+    position: fixed;
+    inset: 0;
+    background: #000;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 20000;
+    transition: opacity 2.5s ease;
+}
+#hkp-r-dim.hkp-r-wake { transition: opacity 0.15s ease; }
+.hkp-r-select {
+    font: 13px var(--hkp-ui-font, "Segoe UI", sans-serif);
+    color: var(--hkp-text);
+    background: #1d1a15;
+    border: 1px solid var(--hkp-border-hi, #5a4a2e);
+    border-radius: 4px;
+    padding: 4px 6px;
+}
+/* three controls: under the text, not beside it (the text column got squeezed to one word a line) */
+#hkp-row-care { flex-direction: column !important; align-items: stretch !important; gap: 8px; }
+#hkp-row-care .hkp-setting-control { flex-wrap: wrap; gap: 10px 16px; justify-content: flex-start !important; }
