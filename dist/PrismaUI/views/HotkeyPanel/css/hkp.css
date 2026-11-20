@@ -392,7 +392,7 @@ body.hkp-color-mode .hkp-key:not(.hkp-reserved) { cursor: crosshair; }
     height: 100%;
     aspect-ratio: 777 / 630;
     max-width: 100%;
-    background: transparent url("../img/mouse_clean.png?v=5") center / contain no-repeat;
+    background: none;   /* --Claude 2026-11-20: the mouse is drawn (SVG) now; the old picture is gone */
 }
 
 /* Each button is an absolutely-positioned text input that covers a label in the image.

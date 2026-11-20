@@ -1,7 +1,7 @@
-// HKP GKeys Addon — StinkyPumpkin's personal Logitech G-key column.
-// G1-G6 are remapped to F19-F24 in Logitech G HUB; this file overrides the main
-// mod's stub via MO2 VFS priority (this folder must sit BELOW Hotkey Panel in
-// the left pane so it wins the file conflict).
+// Hotkey Panel - G-key column (installed by the G-keys option; replaces the main mod's empty js/gkeys.js).
+// Six extra keys G1-G6, set to send F19-F24 in the keyboard's own software (Logitech G HUB, Corsair iCUE,
+// Razer Synapse, ...). GKeysInputBridge.dll makes F13-F24 real keys in Skyrim, so any mod can bind them.
+// A different set-up: change the id (the F-key the G-key sends) and cap (the name on the panel) below.
 window.HKP_GKEYS = [
     { id: 'F19', cap: 'G1' },
     { id: 'F20', cap: 'G2' },

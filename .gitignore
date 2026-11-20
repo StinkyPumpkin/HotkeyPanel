@@ -45,3 +45,6 @@ build_log*.txt
 
 # python caches
 __pycache__/
+
+# release zips (tools/make_release.py)
+/release/

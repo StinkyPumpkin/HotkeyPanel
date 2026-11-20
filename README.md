@@ -1,142 +1,104 @@
 # Hotkey Panel
 
-A visual hotkey reminder for Skyrim SE/AE. Press one key, see a full keyboard +
-mouse overlay where every binding from every mod can be labeled, color-coded,
-and grouped into per-mod profiles. Pure SKSE plugin — no ESP, no Papyrus, no
-load-order slot consumed.
+A keyboard and mouse overlay showing every hotkey of every mod. One key opens it.
 
 ![Hotkey Panel banner](branding/hotkey_panel_banner.png)
 
 ## Features
 
-- **Full 104-key ANSI keyboard** + 11-button gaming-mouse overlay
-- **Per-mod profiles** — label the same key differently for Frostfall vs. SkyUI vs. Requiem
-- **Tap modes** — single / double / long-press each get their own labels and colors
-- **Modifier layers** — mark any key as a modifier; bindings stack (Shift+Ctrl = its own layer)
-- **Per-profile color overrides** — KeyA red in DEFAULT, blue in Frostfall, restored when you switch back
-- **In-UI toggle key rebinding** — change the open/close key without editing INIs
-- **Resizable + transparent** — panel scale 12–100 %, opacity 20–100 %, persisted across saves
-- **Game-pause + input isolation** — the panel pauses the world; other mods' `RegisterForKey` handlers don't fire while it's open
-- **Pure SKSE** — no ESP, no .pex, no Papyrus VM cost
-- **Persistence in JSON** — `Data/SKSE/Plugins/HotkeyPanel/hotkeys.json` (atomic writes, `.bak` on every save), survives new games
-- **Tablet / phone remote** — open the panel in the browser of any tablet or phone on your home network and tap a key to fire it in game (see below)
-
-## Tablet / phone remote
-
-Settings → **Tablet / phone remote** → Enabled. The row then shows the address to open on the
-tablet, e.g. `http://192.168.0.110:8950` (the port is editable). Any browser works: Android,
-iPad, a second PC.
-
-- **Tap** a labelled key to fire it in game, exactly like holding it in the in-game panel
-  (current layer, modifiers and tap mode included). Green flash = the game took it.
-- **Long press** a key for its menu (rename, colour, profiles, Move Key). Edits sync both ways
-  through `hotkeys.json`, live.
-- **Full screen** button in the top bar; `● Connected` shows whether the game is reachable.
-- Off by default. It only answers devices on the local network (10.x, 172.16–31.x, 192.168.x).
-  The first time, Windows asks whether Skyrim may accept connections: allow it for the network
-  your PC is on (if your network is set to *Public*, tick Public, or switch it to Private).
+- Full keyboard (main block, arrows, numpad) and a gaming mouse with its side buttons
+- Mods' keys found on their own: MCM Helper menus, SKSE plugin ini / json files, mods that announce their keys
+- Keys of mods that are not installed stay off the panel
+- Clashes marked: two actions on one key get a red !
+- Names, colours (colour wheel, see-through, saved colours), icons and borders per key
+- Icon library: 130 pictures and 69 line icons, plus your own pictures (Icons folder)
+- Mod profiles: one glowing outline round a mod's keys
+- Modifier layers (Shift, Ctrl, any key) and tap modes (single, double, long press)
+- Click a key to fire it in game
+- MCM key picker: opens over an MCM that asks for a key; click the key there
+- Move and resize from the title and the corner grip
+- Tablet / phone remote over your home network
+- Offline editor in Mod Organizer 2 (separate download)
+- No ESP, no scripts, nothing in your save
 
 ## Requirements
 
-| Dependency | Why |
-|---|---|
-| [SKSE64](https://skse.silverlock.org/) | Plugin host |
-| [Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444) (SE) / [AE flavor](https://www.nexusmods.com/skyrimspecialedition/mods/32444) | Runtime version independence |
-| [PrismaUI](https://www.nexusmods.com/skyrimspecialedition/mods/100250) | HTML/JS overlay engine that renders the panel |
+- [SKSE64](https://skse.silverlock.org/)
+- [Address Library for SKSE Plugins](https://www.nexusmods.com/skyrimspecialedition/mods/32444)
+- [Magelight UI](https://www.nexusmods.com/skyrimspecialedition/mods/193303) 1.5.0 or newer
+- [Microsoft Visual C++ Redistributable 2015-2022 (x64)](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist) (for Magelight UI)
 
-Works on **all Skyrim SE/AE runtimes Address Library supports** (1.5.x SE, 1.6.x AE). Not VR.
+Without Magelight UI the panel falls back to [PrismaUI](https://www.nexusmods.com/skyrimspecialedition/mods/100250).
+
+Built for Skyrim SE 1.5.97, AE 1.6.x and 1.7.x. Tested on 1.6.1170.
 
 ## Install
 
-Just drop the contents of `dist/` into your Skyrim Data folder (or install the
-release ZIP via Mod Organizer 2 / Vortex). Default toggle key is **F11** — open
-the panel, hit Settings, pick a different key if F11 conflicts with something
-else in your load order.
+Install with Mod Organizer 2 or Vortex. The installer asks one question:
 
-## Source layout
+- **Does your keyboard have G-keys?** Yes installs the G-keys add-on: F13-F24 become real keys in Skyrim for every mod
+  (Skyrim stops at F12), and the panel gets a G-key column, G1-G6 = F19-F24. Set the G-keys to send those keys in the
+  keyboard's own software (Logitech G HUB, Corsair iCUE, Razer Synapse and others). Another set-up: edit
+  `js/gkeys.js` in `Magelight/HotkeyPanel/views` and `PrismaUI/views/HotkeyPanel`.
 
-```
-src/                  C++ SKSE plugin sources
-  plugin.cpp          SKSE entry, logger setup, message callbacks
-  PrismaUIBridge.*    Creates the PrismaUI view, registers JS listeners,
-                      bridges JS → game and back
-  InputHandler.*      BSInputDeviceManager sink — owns the toggle key,
-                      menu blocklist, Esc/Tab close, input swallow while open
-  JsonStore.*         Atomic load/save of hotkeys.json
-  RemoteServer.*      Tablet remote: serves the view over HTTP (cpp-httplib),
-                      /api/press, /api/state (long-poll + versioned saves)
-include/
-  PrismaUI_API.h      Public PrismaUI SDK header (used for plugin API binding)
-dist/                 Files shipped to the player's Data folder
-  PrismaUI/views/HotkeyPanel/
-    index.html        Panel structure
-    css/hkp.css       Skyrim-styled CSS — gold/dark, EB Garamond serif
-    js/hkp.js         All UI logic, state, persistence, key/mouse rendering
-    img/mouse_clean.png  Mouse silhouette (transparent background)
-    remote/           Tablet remote only (never loaded in game): remote.js turns
-                      the panel's bridge calls into HTTP requests, remote.css
-                      fits the page to a touch screen
-branding/             Nexus banner + thumbnail (SVG + PNG)
-CMakeLists.txt        Build config (CommonLibSSE-NG via vcpkg)
-vcpkg.json            Pinned deps
-build.bat             One-shot build + deploy script (MSVC + Ninja)
-```
+Default toggle key: **F11**. Settings in the panel changes it (Shift combinations work).
+
+## Your own icons
+
+Put PNG, JPG, SVG, WEBP or GIF pictures in a folder named **Icons** at the top of a mod (`Data\Icons`). Best a mod of
+their own, so an update of Hotkey Panel never takes them away. Right-click a key > Icon and border > Your icons.
+
+- Any file name: the name without its ending is the name in the list
+- Folders inside Icons become groups
+- Bigger than 256 pixels: shrunk to 256 for the panel (the file stays as it is)
+- Up to 16 MB a file and 400 pictures
+- A key remembers a picture by folder and file name
+
+## Tablet / phone remote
+
+Settings > Tablet / phone remote > Enabled. The row shows the address to open on the tablet
+(`http://<your PC>:8950`, port editable). Any browser.
+
+- Tap a key to fire it in game; long press for its menu. Edits sync both ways.
+- Screen care for a tablet that stays on: the picture moves a few pixels now and then, and dims when nobody touches it
+  (a tap fires the key and wakes it).
+- Off by default. Answers devices on the local network only. The first time, Windows asks whether Skyrim may accept
+  connections: allow it for your network.
+
+## Offline editor (Mod Organizer 2)
+
+Separate download. Copy the `HotkeyPanelEditor` folder into MO2's `plugins` folder and restart MO2. Tools >
+Hotkey Panel - edit offline. Needs MO2 2.5+ and Edge or Chrome. Saves to `hotkeys.json` while Skyrim is closed.
+
+## Files
+
+- Settings and keys: `Data/SKSE/Plugins/HotkeyPanel/hotkeys.json` (a `.bak` is kept on every save)
+- Log: `Documents/My Games/Skyrim Special Edition/SKSE/HotkeyPanelPrisma.log`
 
 ## Build from source
 
-Requires Visual Studio 2022+ with C++ build tools, CMake 3.21+, [vcpkg](https://vcpkg.io/),
-and `VCPKG_ROOT` set in your environment.
+Visual Studio 2022 (C++), CMake 3.21+, vcpkg (`VCPKG_ROOT`).
 
 ```cmd
-git clone https://github.com/StinkyPumpkin/HotkeyPanel.git
+git clone --recursive https://github.com/StinkyPumpkin/HotkeyPanel.git
 cd HotkeyPanel
 build.bat
+python tools\make_release.py
 ```
 
-The build script outputs `HotkeyPanelPrisma.dll` and copies it (plus the
-PrismaUI views) to a Mod Organizer 2 mod folder. Edit `OUTPUT_FOLDER` in
-`CMakeLists.txt` (or set `SKYRIM_MODS_FOLDER` env var) to retarget.
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  Skyrim runtime                                                 │
-│                                                                 │
-│  ┌────────────────────────┐         ┌──────────────────────┐    │
-│  │ HotkeyPanelPrisma.dll  │         │ PrismaUI.dll         │    │
-│  │ ─────────────────────  │  API    │ ─────────────────    │    │
-│  │ InputHandler           │ ◄────►  │ V8 + HTML overlay    │    │
-│  │ PrismaUIBridge         │         │ DX11 input hook      │    │
-│  │ JsonStore              │         │ Menu shell           │    │
-│  └────────┬───────────────┘         └──────────┬───────────┘    │
-│           │                                    │                │
-│  ┌────────▼────────┐                  ┌────────▼───────────┐    │
-│  │ BSInputDevice   │                  │ index.html + JS    │    │
-│  │ Manager sink    │                  │ (hkp.js — 970 LOC) │    │
-│  │ (kStop on view  │                  │                    │    │
-│  │  visible)       │                  │ Renders keyboard,  │    │
-│  │                 │                  │ mouse, profiles,   │    │
-│  │ Toggle / Tab /  │                  │ color swatches,    │    │
-│  │ Esc close keys  │                  │ modifier layers    │    │
-│  └─────────────────┘                  └────────┬───────────┘    │
-│                                                │                │
-│                                                ▼                │
-│                                       hotkeys.json (state)      │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-Settings flow: JS dispatches `hkpSetToggleKey` and the C++ `PrismaUIBridge`
-listener calls `InputHandler::SetToggleKey()` to update the active toggle key.
-State persists via `hkpSaveState` → `JsonStore::Save()` with atomic
-temp+rename + .bak rotation.
+`build.bat` builds `HotkeyPanelPrisma.dll` and `GKeysInputBridge.dll` (CommonLibSSE-NG 9.1.0 from the
+`extern/CommonLibSSE-NG` submodule); `build.bat deploy` also copies them into `%SKYRIM_MODS_FOLDER%`. The page is in
+`dist/PrismaUI/views/HotkeyPanel` (`tools/deploy_views.py` copies it), the icon library is built by
+`tools/build_icons.py`, the release zips by `tools/make_release.py`.
 
 ## Credits
 
-- **PrismaUI** by Nezvers — the HTML/JS overlay engine this depends on
-- **CommonLibSSE-NG** — SKSE plugin framework
-- **Bethesda** — Skyrim, obviously
+- Magelight UI by Severause (MIT)
+- PrismaUI
+- CommonLibSSE-NG (alandtse and contributors)
+- cpp-httplib by yhirose (MIT)
+- SKSE team; meh321 and the Address Library maintainers
 
 ## License
 
-GPL-3.0 — see [LICENSE](LICENSE). Versions released before this change stay under the MIT licence they came with.
+GPL-3.0 (see LICENSE). Use, change and share it; versions you share stay GPL-3.0 with their source. Versions released before this change stay under the MIT licence they came with.

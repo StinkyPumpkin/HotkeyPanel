@@ -70,7 +70,7 @@ std::chrono::steady_clock::time_point g_pressAt[12];
 bool TextEntryActive()
 {
     auto* cm = RE::ControlMap::GetSingleton();
-    return cm && cm->textEntryCount > 0;
+    return cm && cm->GetRuntimeData().textEntryCount > 0;   // CommonLib NG 9: SE/AE/VR layouts behind accessors
 }
 
 // --Claude 2026-09-05: GetActiveWindow() is THREAD-LOCAL (the active window attached to the
@@ -83,8 +83,8 @@ HWND GameWindow()
 {
     static HWND cached = nullptr;
     if (!cached) {
-        if (auto* renderer = RE::BSGraphics::Renderer::GetSingleton()) {
-            cached = reinterpret_cast<HWND>(renderer->data.renderWindows[0].hWnd);
+        if (auto* window = RE::BSGraphics::Renderer::GetCurrentRenderWindow()) {
+            cached = reinterpret_cast<HWND>(window->hWnd);
         }
     }
     return cached;
@@ -148,8 +148,9 @@ struct KeyboardProcessHook {
         if (done || !kb) return;
         done = true;
         int found = 0, added = 0;
+        auto& dev = static_cast<RE::BSInputDevice*>(kb)->GetRuntimeData();   // the base class's maps
         for (const auto& k : kFKeys) {
-            if (kb->deviceButtons.find(k.dik) != kb->deviceButtons.end()) {
+            if (dev.deviceButtons.find(k.dik) != dev.deviceButtons.end()) {
                 ++found;
                 continue;
             }
@@ -157,10 +158,10 @@ struct KeyboardProcessHook {
             button->name         = RE::BSFixedString(k.name);
             button->heldDownSecs = 0.0f;
             button->keycode      = k.dik;
-            using ButtonsVT = std::remove_reference_t<decltype(kb->deviceButtons)>::value_type;
-            using NamesVT   = std::remove_reference_t<decltype(kb->buttonNameIDMap)>::value_type;
-            kb->deviceButtons.insert(ButtonsVT{ k.dik, button });
-            kb->buttonNameIDMap.insert(NamesVT{ button->name, k.dik });
+            using ButtonsVT = std::remove_reference_t<decltype(dev.deviceButtons)>::value_type;
+            using NamesVT   = std::remove_reference_t<decltype(dev.buttonNameIDMap)>::value_type;
+            dev.deviceButtons.insert(ButtonsVT{ k.dik, button });
+            dev.buttonNameIDMap.insert(NamesVT{ button->name, k.dik });
             ++added;
         }
         SKSE::log::info("GKeysInputBridge: keyboard buttons F13-F24: {} already registered by the engine, {} added by us",
@@ -179,7 +180,7 @@ struct KeyboardProcessHook {
 
         for (int i = 0; i < 12; ++i) {
             const auto& k      = kFKeys[i];
-            const bool  diDown = (kb->curState[k.dik] & 0x80) != 0;   // engine saw it this frame
+            const bool  diDown = (kb->GetRuntimeData().curState[k.dik] & 0x80) != 0;   // engine saw it this frame
             // Two Windows views of the key. GetAsyncKeyState = physical/injected state right
             // now (Risa's AIO MinHooks it, but its hook only alters answers for specific caller
             // modules, never ours — verified in its v4.9 source). GetKeyState = this thread's
@@ -295,7 +296,7 @@ SKSEPluginLoad(const SKSE::LoadInterface* skse)
 {
     InitializeLogging();
     SKSE::log::info("GKeysInputBridge v2 loading...");
-    SKSE::Init(skse);
+    SKSE::Init(skse, { .log = false });   // CommonLib NG 9: our own logger
 
     // Install one main-loop tick AFTER every plugin's kDataLoaded handler ran: RisaUI
     // writes the same vtable slot directly in its kDataLoaded handler, so deferring

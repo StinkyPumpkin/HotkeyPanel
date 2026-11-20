@@ -63,4 +63,12 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 
+# --Claude 2026-11-20: the optional G-keys add-on (a FOMOD choice): F13-F24 become real keys for every mod (Skyrim
+# itself stops at F12). Built from the same CommonLib as the panel; up to 1.0 it was a separate vcpkg 3.7.0 build.
+add_commonlibsse_plugin(GKeysInputBridge NAME GKeysInputBridge VERSION 1.1.0 MINIMUM_SKSE_VERSION 0.0.0 SOURCES
+    addon-gkeys/bridge/src/plugin.cpp
+)
+target_compile_features(GKeysInputBridge PRIVATE cxx_std_23)
+target_precompile_headers(GKeysInputBridge PRIVATE PCH.h)
+
 # No copy into the mod folder here: build.bat copies only when asked ("build.bat deploy"), never while the game runs.

@@ -1,0 +1,68 @@
+[size=5][b]Hotkey Panel[/b][/size]
+A keyboard and mouse overlay showing every hotkey of every mod. One key opens it.
+
+[size=4][b]Features[/b][/size]
+[list]
+[*]Full keyboard (main block, arrows, numpad) and a gaming mouse with its side buttons
+[*]Mods' keys found on their own: MCM Helper menus, SKSE plugin ini / json files, mods that announce their keys
+[*]Keys of mods that are not installed stay off the panel
+[*]Clashes marked: two actions on one key get a red !
+[*]Names, colours (colour wheel, see-through, saved colours), icons and borders per key
+[*]Icon library: 130 pictures and 69 line icons, plus your own pictures (Icons folder)
+[*]Mod profiles: one glowing outline round a mod's keys
+[*]Modifier layers (Shift, Ctrl, any key) and tap modes (single, double, long press)
+[*]Click a key to fire it in game
+[*]MCM key picker: opens over an MCM that asks for a key; click the key there
+[*]Move and resize from the title and the corner grip
+[*]Tablet / phone remote over your home network
+[*]Offline editor in Mod Organizer 2 (optional file)
+[*]No ESP, no scripts, nothing in your save
+[/list]
+
+[size=4][b]Requirements[/b][/size]
+[list]
+[*][url=https://skse.silverlock.org/]SKSE64[/url]
+[*][url=https://www.nexusmods.com/skyrimspecialedition/mods/32444]Address Library for SKSE Plugins[/url]
+[*][url=https://www.nexusmods.com/skyrimspecialedition/mods/193303]Magelight UI[/url] 1.5.0 or newer
+[*][url=https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist]Microsoft Visual C++ Redistributable 2015-2022 (x64)[/url] (for Magelight UI)
+[/list]
+Without Magelight UI the panel falls back to [url=https://www.nexusmods.com/skyrimspecialedition/mods/100250]PrismaUI[/url].
+Built for Skyrim SE 1.5.97, AE 1.6.x and 1.7.x. Tested on 1.6.1170.
+
+[size=4][b]Install[/b][/size]
+Mod Organizer 2 or Vortex. The installer asks one question:
+[list]
+[*][b]Does your keyboard have G-keys?[/b] Yes: F13-F24 become real keys in Skyrim for every mod (Skyrim stops at F12), and the panel gets a G-key column, G1-G6 = F19-F24. Set the G-keys to send those keys in the keyboard's own software (Logitech G HUB, Corsair iCUE, Razer Synapse and others).
+[/list]
+Default toggle key: [b]F11[/b] (Settings in the panel changes it).
+
+[size=4][b]Your own icons[/b][/size]
+PNG, JPG, SVG, WEBP or GIF pictures in a folder named [b]Icons[/b] at the top of a mod (Data\Icons), best a mod of their own. Right-click a key > Icon and border > Your icons.
+[list]
+[*]Any file name; folders inside Icons become groups
+[*]Bigger than 256 pixels: shrunk to 256 for the panel
+[*]Up to 16 MB a file and 400 pictures
+[/list]
+
+[size=4][b]Tablet / phone remote[/b][/size]
+Settings > Tablet / phone remote > Enabled; open the address it shows in any browser on your home network.
+[list]
+[*]Tap a key to fire it in game; long press for its menu; edits sync both ways
+[*]Screen care for a tablet that stays on (moves a few pixels, dims when idle)
+[*]Local network only; Windows asks once to let Skyrim through the firewall
+[/list]
+
+[size=4][b]Offline editor (optional file)[/b][/size]
+Copy the HotkeyPanelEditor folder into Mod Organizer 2's plugins folder and restart MO2. Tools > Hotkey Panel - edit offline. Needs MO2 2.5+ and Edge or Chrome.
+
+[size=4][b]Credits[/b][/size]
+[list]
+[*]Magelight UI by Severause
+[*]PrismaUI
+[*]CommonLibSSE-NG (alandtse and contributors)
+[*]cpp-httplib by yhirose
+[*]SKSE team; meh321 and the Address Library maintainers
+[/list]
+
+[size=4][b]Permissions[/b][/size]
+Open source (MIT): [url=https://github.com/StinkyPumpkin/HotkeyPanel]github.com/StinkyPumpkin/HotkeyPanel[/url]. Use, change and share freely.
