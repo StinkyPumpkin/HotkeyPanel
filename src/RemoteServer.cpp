@@ -292,7 +292,7 @@ namespace {
         // --Claude 2026-11-20: + the icon pictures (icons/menus, icons/items).
         a_srv.Get(R"(/(css|js|img|remote|icons/menus|icons/items)/([A-Za-z0-9_\-]+\.[A-Za-z0-9]+))", ServeViewFile);
 
-        // --Claude 2026-11-20: the user's own key pictures (Data/SKSE/Plugins/HotkeyPanel/Icons) and their list.
+        // --Claude 2026-11-20: the user's own key pictures (Data/Icons) and their list.
         // UserIcons::Read only answers picture files inside that folder.
         a_srv.Get("/api/usericons", [](const httplib::Request&, httplib::Response& a_res) {
             a_res.set_header("Cache-Control", "no-store");

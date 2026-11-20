@@ -3,9 +3,9 @@
 #include <filesystem>
 #include <string>
 
-// --Claude 2026-11-20: the user's own key pictures - PNG, JPG, SVG, WEBP or GIF files in
-// Data/SKSE/Plugins/HotkeyPanel/Icons (with MO2: in a mod of their own). Folders inside become groups
-// in the panel's icon picker. Files are only read, never changed.
+// --Claude 2026-11-20: the user's own key pictures - PNG, JPG, SVG, WEBP or GIF files in Data/Icons, a folder
+// named Icons at the top of a mod (with MO2: best a mod of their own, so an update of the panel never takes
+// them away). Folders inside become groups in the panel's icon picker. Files are only read, never changed.
 namespace UserIcons
 {
     std::filesystem::path Dir();

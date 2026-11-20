@@ -19,7 +19,7 @@ TYPES = {'.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=u
          '.woff': 'font/woff', '.woff2': 'font/woff2', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
          '.gif': 'image/gif'}
 PICTURES = ('.png', '.jpg', '.jpeg', '.svg', '.webp', '.gif')
-USER_ICONS_REL = os.path.join('SKSE', 'Plugins', 'HotkeyPanel', 'Icons')
+USER_ICONS_REL = 'Icons'   # Data/Icons: a folder named Icons at the top of a mod
 
 
 def skyrim_running():
@@ -192,7 +192,7 @@ class EditorServer:
 # ---- helpers the plugin uses to build a Setup ----
 
 def user_icon_files(dirs):
-    """The user's own key pictures as the game would see them: Data/SKSE/Plugins/HotkeyPanel/Icons in each folder of
+    """The user's own key pictures as the game would see them: Data/Icons in each folder of
     `dirs` (lowest priority first; a later one wins a clash), sub-folders up to 3 deep. {'Combat/sword.png': real}"""
     out = {}
     for base in dirs:

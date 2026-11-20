@@ -80,7 +80,7 @@
             window.HKP.setFonts(await (await fetch('/api/fonts')).json());
             // keys from settings files of mods MO2 does not load stay off the panel, as in game
             if (window.HKP.setInstalledNames) window.HKP.setInstalledNames(await (await fetch('/api/installed')).json());
-            // the user's own key pictures (Data/SKSE/Plugins/HotkeyPanel/Icons in the enabled mods)
+            // the user's own key pictures (Data/Icons in the enabled mods)
             if (window.HKP.setUserIcons) window.HKP.setUserIcons(await (await fetch('/api/usericons')).json());
             window.HKP.show();
             showBanner(st.path || 'hotkeys.json');

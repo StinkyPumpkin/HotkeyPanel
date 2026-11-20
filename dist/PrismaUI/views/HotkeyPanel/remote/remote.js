@@ -183,7 +183,7 @@
             .then((r) => r.json())
             .then((list) => window.HKP.setGameKeys(list))
             .catch(() => {});
-        // --Claude 2026-11-20: the user's own key pictures (Data/SKSE/Plugins/HotkeyPanel/Icons), served by the game
+        // --Claude 2026-11-20: the user's own key pictures (Data/Icons), served by the game
         fetch('/api/usericons', { cache: 'no-store' })
             .then((r) => r.json())
             .then((list) => { if (window.HKP.setUserIcons) window.HKP.setUserIcons(list); })

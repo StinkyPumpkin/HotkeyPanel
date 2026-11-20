@@ -143,7 +143,7 @@ class Helpers(unittest.TestCase):
 
     def test_user_icons(self):
         tmp = tempfile.mkdtemp()
-        icons = lambda mod: os.path.join(tmp, mod, 'SKSE', 'Plugins', 'HotkeyPanel', 'Icons')
+        icons = lambda mod: os.path.join(tmp, mod, 'Icons')
         os.makedirs(os.path.join(icons('low'), 'My Combat'))
         os.makedirs(icons('high'))
         for mod, rel, data in (('low', 'My Combat/sword.png', b'low'), ('low', 'Shared.png', b'low'),

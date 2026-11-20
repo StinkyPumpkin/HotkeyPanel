@@ -26,7 +26,7 @@ static void RequestScan(bool force);
 static std::atomic<bool> g_scanEnabled{ true };      // settings.scanConfigs, pushed by the panel
 static std::atomic<long long> g_lastScanMs{ 0 };
 
-// --Claude 2026-11-20: the user's own key pictures (Data/SKSE/Plugins/HotkeyPanel/Icons). Read on a worker thread
+// --Claude 2026-11-20: the user's own key pictures (Data/Icons). Read on a worker thread
 // (pictures can be big) and sent only when the folder changed since the page last got them; a reloaded page
 // gets them again. Checked when the page is ready and each time the panel opens.
 static void SendUserIcons();

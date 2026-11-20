@@ -1849,7 +1849,7 @@
         refreshAll(); save();
     }
 
-    // Pictures of the user's own, sent by the game (from Data/SKSE/Plugins/HotkeyPanel/Icons; sub-folders = groups):
+    // Pictures of the user's own, sent by the game (from Data/Icons, a folder named Icons at the top of a mod; sub-folders = groups):
     // [{ id: 'u:<folder/file>', name, group, url }]
     function setUserIcons(list) {
         userIcons = (Array.isArray(list) ? list : []).filter(u => u && u.id && u.url).map(u => {
@@ -1956,8 +1956,9 @@
             const n = document.createElement('div');
             n.className = 'hkp-look-empty';
             n.textContent = look.cat === 'user' && !userIcons.length
-                ? 'No pictures of your own yet. Put PNG, JPG or SVG files in Data\\SKSE\\Plugins\\HotkeyPanel\\Icons ' +
-                  '(with MO2: in a mod of their own). Folders in there become groups here. They show the next time the panel opens.'
+                ? 'No pictures of your own yet. Put PNG, JPG or SVG files in a folder named Icons at the top of a mod ' +
+                  '(Data\\Icons; with MO2 best a mod of their own). Folders in there become groups here. ' +
+                  'They show the next time the panel opens.'
                 : 'Nothing found.';
             grid.appendChild(n);
         }

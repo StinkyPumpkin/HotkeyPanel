@@ -40,6 +40,11 @@ def main():
     for t in targets:
         copy_tree(SRC, t)
         print('views ->', t)
+    # --Claude 2026-11-20: the Icons folder at the mod's top level (the user's own pictures go there)
+    icons = os.path.join(ROOT, 'dist', 'Icons')
+    if os.path.isdir(icons):
+        copy_tree(icons, os.path.join(mod, 'Icons'))
+        print('Icons ->', os.path.join(mod, 'Icons'))
     addon = os.path.join(mods, 'HKP GKeys Addon--Claude')
     if os.path.isdir(addon) and os.path.isfile(ADDON_JS):
         for sub in (('Magelight', 'HotkeyPanel', 'views', 'js'), ('PrismaUI', 'views', 'HotkeyPanel', 'js')):

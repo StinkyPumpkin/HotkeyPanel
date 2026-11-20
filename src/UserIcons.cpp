@@ -141,7 +141,8 @@ namespace
 fs::path UserIcons::Dir()
 {
     // Skyrim runs with CWD = game root; under MO2 the VFS shows every mod's files in Data/.
-    return fs::current_path() / "Data" / "SKSE" / "Plugins" / "HotkeyPanel" / "Icons";
+    // a folder named Icons at the top of a mod, so it is easy to find
+    return fs::current_path() / "Data" / "Icons";
 }
 
 std::string UserIcons::Signature()

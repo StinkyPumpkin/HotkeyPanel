@@ -1,0 +1,13 @@
+Hotkey Panel - your own key pictures
+
+Put PNG, JPG, SVG, WEBP or GIF pictures in this Icons folder. They show in the panel under
+right-click a key > Icon and border > Your icons, the next time the panel opens.
+
+- Any file name works: the name without its ending is the picture's name in the list ("Bow Combo.png" = Bow Combo).
+- Folders inside Icons become groups in the list (Icons\Combat\..., Icons\Magic\...).
+- Square pictures with a see-through background look best; about 128 to 256 pixels is plenty.
+- Up to 2 MB a picture and 400 pictures.
+- A key remembers its picture by folder and file name: rename or move a picture and the key forgets it.
+
+With Mod Organizer 2: best keep your pictures in a mod of their own (a folder named Icons at the top of that
+mod), so an update of Hotkey Panel never takes them away.
