@@ -10,7 +10,7 @@ from typing import List
 
 import mobase
 from PyQt6.QtCore import QUrl
-from PyQt6.QtGui import QDesktopServices, QIcon
+from PyQt6.QtGui import QDesktopServices, QGuiApplication, QIcon
 from PyQt6.QtWidgets import QMessageBox
 
 from . import editor_server as es
@@ -44,7 +44,8 @@ class HotkeyPanelEditor(mobase.IPluginTool):
         return mobase.VersionInfo(*VERSION, mobase.ReleaseType.FINAL)
 
     def settings(self) -> List[mobase.PluginSetting]:
-        return []
+        return [mobase.PluginSetting('browser_tab', 'Open the editor as a tab in your normal web browser '
+                                     'instead of a window of its own', False)]
 
     def displayName(self) -> str:
         return 'Hotkey Panel - edit offline'
@@ -128,10 +129,32 @@ class HotkeyPanelEditor(mobase.IPluginTool):
                 self._server = es.EditorServer(setup)
             else:
                 self._server.update(setup)
-            QDesktopServices.openUrl(QUrl(self._server.url()))
+            self._open(self._server.url())
         except Exception as e:
             _log.exception('Hotkey Panel Editor: could not open')
             QMessageBox.warning(None, 'Hotkey Panel Editor', 'Could not open the editor:\n%s' % e)
+
+
+    # A window of its own (Edge / Chrome app mode: no tabs, no address bar), 85% of the screen, centred.
+    # A browser tab when the setting asks for it or neither browser is there.
+    def _open(self, url):
+        try:
+            tab = bool(self._organizer.pluginSetting(self.name(), 'browser_tab'))
+        except Exception:
+            tab = False
+        if not tab:
+            try:
+                geom = None
+                screen = QGuiApplication.primaryScreen()
+                if screen is not None:
+                    a = screen.availableGeometry()
+                    w, h = int(a.width() * 0.85), int(a.height() * 0.85)
+                    geom = (a.x() + (a.width() - w) // 2, a.y() + (a.height() - h) // 2, w, h)
+                if es.open_app_window(url, geom):
+                    return
+            except Exception:
+                _log.exception('Hotkey Panel Editor: own window failed, opening a browser tab')
+        QDesktopServices.openUrl(QUrl(url))
 
 
 def createPlugin():

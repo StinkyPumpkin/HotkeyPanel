@@ -908,6 +908,15 @@
         return el;
     }
 
+    // --Claude 2026-11-20: in a real browser (offline editor, tablet) a right-click also opened the browser's
+    // own menu: ours opens on mousedown, and the browser's contextmenu event then lands on our menu, which
+    // did not cancel it. Cancelled everywhere now, except in text fields (copy / paste stay there).
+    document.addEventListener('contextmenu', (e) => {
+        const t = e.target;
+        if (t && t.closest && t.closest('input, textarea, [contenteditable="true"]')) return;
+        e.preventDefault();
+    }, true);
+
     // Long-press (hold 450ms) as a fallback for right-click in case PrismaUI
     // swallows the contextmenu event.
     function attachLongPress(el, keyId) {

@@ -122,6 +122,14 @@ class Helpers(unittest.TestCase):
         self.assertEqual(es.read_game_keys(['', p]), [[0x11, 'Forward'], [0xb7, 'Screenshot'], [0x9d, 'Screenshot']])
         shutil.rmtree(tmp)
 
+    def test_app_window_command(self):
+        cmd = es.app_window_command('edge.exe', 'http://127.0.0.1:5/', (10, 20, 1600, 900))
+        self.assertEqual(cmd[:2], ['edge.exe', '--app=http://127.0.0.1:5/'])
+        self.assertIn('--window-size=1600,900', cmd)
+        self.assertIn('--window-position=10,20', cmd)
+        self.assertFalse(any(a.startswith('--user-data-dir') for a in cmd))   # the user's own profile, no fresh one
+        self.assertEqual(es.app_window_command('edge.exe', 'u'), ['edge.exe', '--app=u'])
+
     def test_installed_names(self):
         tmp = tempfile.mkdtemp()
         os.makedirs(os.path.join(tmp, 'a', 'SKSE', 'Plugins', 'sub'))

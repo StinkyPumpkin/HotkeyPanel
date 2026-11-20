@@ -27,7 +27,7 @@
         banner = document.createElement('div');
         banner.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:4500;padding:3px 12px;font:12px "Segoe UI",Arial,sans-serif;' +
             'background:rgba(40,33,20,.95);color:#e8cc8e;border-bottom:1px solid rgba(201,170,110,.4);white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
-        banner.textContent = 'Offline editor - every change saves to ' + path + ' (only while Skyrim is closed). Close this tab when done.';
+        banner.textContent = 'Offline editor - every change saves to ' + path + ' (only while Skyrim is closed).';
         document.body.appendChild(banner);
     }
 
@@ -52,7 +52,18 @@
     window.hkpMoveHotkey = gameOnly('Moving a mod\'s key');
     window.hkpScanConfigs = function (v) { if (v === 'rescan') toast('Rescanning mod config files only works in game'); };
     window.hkpPickKey = gameOnly('The MCM key picker');
-    window.hkpCloseUI = function () { toast('Close this browser tab when you are done - changes are already saved'); };
+    // Esc / Tab with nothing open close the panel in game; here they leave it up (the page hid itself, which
+    // left an empty page). The panel's x closes the editor window - changes are already saved. A normal
+    // browser tab may refuse a page closing itself: then the panel comes back and says how.
+    window.hkpCloseUI = function () {
+        const ev = window.event;
+        if (ev && (ev.type === 'keydown' || ev.type === 'keyup')) { setTimeout(() => window.HKP.show(), 0); return; }
+        try { window.close(); } catch (_) { /* refused */ }
+        setTimeout(() => {
+            window.HKP.show();
+            toast('Close this tab when you are done - changes are already saved');
+        }, 200);
+    };
 
     document.addEventListener('DOMContentLoaded', () => setTimeout(async () => {
         try {

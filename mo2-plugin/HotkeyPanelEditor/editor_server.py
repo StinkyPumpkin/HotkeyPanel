@@ -206,6 +206,43 @@ def read_game_keys(paths):
     return []
 
 
+def app_browser():
+    """Edge (on every Windows 10/11), else Chrome: their --app mode opens a page as a plain window of its
+    own - no tabs, no address bar. None when neither is installed."""
+    for env in ('ProgramFiles(x86)', 'ProgramFiles', 'LOCALAPPDATA'):
+        base = os.environ.get(env)
+        if not base:
+            continue
+        for rel in (('Microsoft', 'Edge', 'Application', 'msedge.exe'), ('Google', 'Chrome', 'Application', 'chrome.exe')):
+            p = os.path.join(base, *rel)
+            if os.path.isfile(p):
+                return p
+    return None
+
+
+def app_window_command(exe, url, geom=None):
+    """The command line for the editor's own window, in the user's normal browser profile. (A fresh profile
+    of its own was tried: Edge signed it into the Windows account and synced extensions, whose welcome pages
+    then opened.) geom = (x, y, w, h), used when the browser was not running yet."""
+    cmd = [exe, '--app=' + url]
+    if geom:
+        x, y, w, h = (int(v) for v in geom)
+        cmd += ['--window-size=%d,%d' % (w, h), '--window-position=%d,%d' % (x, y)]
+    return cmd
+
+
+def open_app_window(url, geom=None):
+    """Opens url in its own window; False when no Edge / Chrome is there (the caller opens a browser tab)."""
+    exe = app_browser()
+    if not exe:
+        return False
+    import subprocess
+    flags = getattr(subprocess, 'DETACHED_PROCESS', 0) | getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0)
+    subprocess.Popen(app_window_command(exe, url, geom), close_fds=True, creationflags=flags,
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return True
+
+
 def installed_names(data_dirs, plugin_names):
     """What the game would load, by name: the active plugin files and every SKSE DLL in these folders.
     The page leaves off keys from a settings file whose mod is none of these (the game sends its own list)."""
