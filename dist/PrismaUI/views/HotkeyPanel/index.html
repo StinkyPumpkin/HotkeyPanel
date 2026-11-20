@@ -55,7 +55,10 @@
                 <div class="hkp-swatch-bar" id="hkp-swatch-bar">
                     <div class="hkp-swatch-label" id="hkp-swatch-label"></div>
                     <div class="hkp-swatches" id="hkp-swatches"></div>
-                    <button class="hkp-swatch-exit" onclick="HKP.exitColorMode()">Exit colour mode</button>
+                    <div class="hkp-swatch-btns">
+                        <button class="hkp-swatch-exit hkp-swatch-set" onclick="HKP.openColourWheel()">Set colour</button>
+                        <button class="hkp-swatch-exit" onclick="HKP.exitColorMode()">Exit colour mode</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -105,6 +108,34 @@
             <div class="hkp-modal-buttons">
                 <button class="hkp-btn" onclick="HKP.cancelPick()">Back</button>
                 <button class="hkp-btn hkp-btn-primary" onclick="HKP.confirmPick()">Bind</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- --Claude 2026-11-20: colour wheel (opened by "Set colour" in colour mode) -->
+    <div class="hkp-modal hkp-hidden" id="hkp-modal-color">
+        <div class="hkp-modal-box hkp-cw-box">
+            <div class="hkp-modal-title">Set colour</div>
+            <div class="hkp-cw-main">
+                <div class="hkp-cw-wheel-wrap" id="hkp-cw-wheel-wrap"><canvas id="hkp-cw-wheel" width="240" height="240"></canvas><div class="hkp-cw-knob" id="hkp-cw-knob"></div></div>
+                <div class="hkp-cw-side">
+                    <div class="hkp-cw-label">Brightness <span id="hkp-cw-vval"></span></div>
+                    <div class="hkp-cw-track" id="hkp-cw-val"><div class="hkp-cw-fill"></div><div class="hkp-cw-thumb"></div></div>
+                    <div class="hkp-cw-label">Opacity <span id="hkp-cw-aval"></span></div>
+                    <div class="hkp-cw-track hkp-cw-checker" id="hkp-cw-alpha"><div class="hkp-cw-fill"></div><div class="hkp-cw-thumb"></div></div>
+                    <div class="hkp-cw-label">Was / now</div>
+                    <div class="hkp-cw-prev"><span id="hkp-cw-old"></span><span id="hkp-cw-new"></span></div>
+                    <div class="hkp-cw-label">Hex (RRGGBBAA)</div>
+                    <input type="text" class="hkp-modal-input hkp-cw-hex" id="hkp-cw-hex" maxlength="9" onchange="HKP.cwHexInput(this.value)" onkeydown="if (event.key === 'Enter') HKP.cwHexInput(this.value)">
+                </div>
+            </div>
+            <div class="hkp-cw-label">Saved colours <span class="hkp-cw-hint">click a square, then Save puts this colour into it</span></div>
+            <div class="hkp-swatches hkp-cw-squares" id="hkp-cw-squares"></div>
+            <div class="hkp-modal-buttons">
+                <button class="hkp-btn" id="hkp-cw-save" onclick="HKP.cwSave()">Pick a square to save into</button>
+                <span class="hkp-cw-spacer"></span>
+                <button class="hkp-btn" onclick="HKP.closeColourWheel()">Cancel</button>
+                <button class="hkp-btn hkp-btn-primary" onclick="HKP.cwUse()">Paint keys with it</button>
             </div>
         </div>
     </div>

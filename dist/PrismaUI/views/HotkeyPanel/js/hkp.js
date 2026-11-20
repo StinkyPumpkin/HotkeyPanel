@@ -168,6 +168,7 @@
             scanConfigs: true,    // --Claude 2026-10-01: show mods' keys found in their config files
             colorStyle: 'fill'    // --Claude 2026-11-20: 'fill' = the key takes its colour, 'dot' = a coloured dot on a plain key
         },
+        swatches: null,   // --Claude 2026-11-20: the 26 saved colour squares ('#rrggbbaa'); null = the original palette
         profiles: [{ name: 'DEFAULT', system: true }],
         activeProfile: 'DEFAULT',
         modifierKeys: [],
@@ -222,6 +223,7 @@
         renderProfiles();
         renderSwatches();
         attachGlobalHandlers();
+        attachWheelHandlers();
         updateModifierBadge();
         applyTapModeBg();
         applyLabelSize();
@@ -299,6 +301,214 @@
     // --Claude 2026-11-20 polish: stacked keys, labels that fit, the pointed-at name scrolls,
     // and the info box in the bottom row.
     // ---------------------------------------------------------------
+
+    // ---------------------------------------------------------------
+    // --Claude 2026-11-20 colour wheel. A key's colour is either a palette number (older saves, and
+    // the colours mods announce) or '#rrggbbaa' from the wheel. The squares are the user's saved
+    // colours (state.swatches, 26 x '#rrggbbaa'; null = the original palette). Painting with a square
+    // copies its colour onto the key, so changing a square later never recolours painted keys.
+    // ---------------------------------------------------------------
+    const KEY_BASE = [30, 27, 22];   // #1e1b16, the plain key under a see-through colour
+    function hex2(v) { return Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0'); }
+    function parseHex8(h) {
+        const m = /^#?([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(String(h || '').trim());
+        if (!m) return null;
+        const n = parseInt(m[1], 16);
+        return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255, a: m[2] ? parseInt(m[2], 16) / 255 : 1 };
+    }
+    function toHex8(r, g, b, a) { return '#' + hex2(r) + hex2(g) + hex2(b) + hex2(a * 255); }
+    function swatchList() {
+        const def = PALETTE.slice(1).map(p => p.hex.toLowerCase() + 'ff');
+        const s = Array.isArray(state.swatches) ? state.swatches : [];
+        return def.map((d, i) => (parseHex8(s[i]) ? String(s[i]).toLowerCase() : d));
+    }
+    function colourInfo(c) {
+        if (c == null || c === 0 || c === '') return null;
+        const custom = typeof c !== 'number';
+        const p = custom ? null : PALETTE[c];
+        const rgb = custom ? parseHex8(c) : (p && p.hex ? parseHex8(p.hex) : null);
+        if (!rgb) return null;
+        const mix = (v, b) => v * rgb.a + b * (1 - rgb.a);
+        const sr = mix(rgb.r, KEY_BASE[0]), sg = mix(rgb.g, KEY_BASE[1]), sb = mix(rgb.b, KEY_BASE[2]);
+        const lumV = (0.2126 * sr + 0.7152 * sg + 0.0722 * sb) / 255;
+        return {
+            custom, rgb,
+            css: 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + rgb.a.toFixed(3) + ')',
+            dimCss: 'rgba(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ',' + (rgb.a * 0.45).toFixed(3) + ')',
+            solid: '#' + hex2(sr) + hex2(sg) + hex2(sb),
+            lum: custom ? (lumV > 0.5 ? 'light' : 'dark') : p.lum
+        };
+    }
+    // see-through colours show over a checkerboard
+    function swatchBg(el, css) {
+        if (!css) {
+            el.style.background = 'repeating-linear-gradient(45deg, #333, #333 3px, #222 3px, #222 6px)';
+            return;
+        }
+        el.style.backgroundColor = '#2a2a2a';
+        el.style.backgroundImage = 'linear-gradient(' + css + ',' + css + '),' +
+            'linear-gradient(45deg,#4a4a4a 25%,transparent 25%,transparent 75%,#4a4a4a 75%),' +
+            'linear-gradient(45deg,#4a4a4a 25%,transparent 25%,transparent 75%,#4a4a4a 75%)';
+        el.style.backgroundSize = 'auto, 8px 8px, 8px 8px';
+        el.style.backgroundPosition = '0 0, 0 0, 4px 4px';
+    }
+    // the key face, dot, fade and text colour for a colour (number or '#rrggbbaa')
+    function paintKeyColour(el, col, dim) {
+        const ci = colourInfo(col);
+        el.dataset.color = typeof col === 'number' ? String(col) : (ci ? 'x' : '0');
+        if (ci && ci.lum === 'light') el.dataset.lum = 'light'; else delete el.dataset.lum;
+        const dotMode = document.body.classList.contains('hkp-color-dot');
+        if (ci && ci.custom && !dotMode) el.style.setProperty('background', dim ? ci.dimCss : ci.css, dim ? 'important' : '');
+        else el.style.removeProperty('background');
+        el.style.setProperty('--kbg', ci ? ci.solid : '#1e1b16');
+        const dotEl = el.querySelector('.hkp-dot');
+        if (dotEl) dotEl.style.background = ci ? ci.css : '';
+        return ci;
+    }
+
+    // ---- the wheel ----
+    let cw = null;   // { h, s, v, a, old, slot } while the colour wheel is open
+    function hsv2rgb(h, s, v) {
+        const f = n => { const k = (n + h / 60) % 6; return v - v * s * Math.max(0, Math.min(k, 4 - k, 1)); };
+        return [f(5) * 255, f(3) * 255, f(1) * 255];
+    }
+    function rgb2hsv(r, g, b) {
+        r /= 255; g /= 255; b /= 255;
+        const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+        let h = 0;
+        if (d) h = mx === r ? ((g - b) / d) % 6 : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+        return { h: (h * 60 + 360) % 360, s: mx ? d / mx : 0, v: mx };
+    }
+    function cwHex() { const [r, g, b] = hsv2rgb(cw.h, cw.s, cw.v); return toHex8(r, g, b, cw.a); }
+    function drawWheel() {
+        const cv = document.getElementById('hkp-cw-wheel');
+        if (!cv || !cv.getContext) return;
+        const ctx = cv.getContext('2d'), W = cv.width, R = W / 2, img = ctx.createImageData(W, W), d = img.data;
+        for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) {
+            const dx = x - R + 0.5, dy = y - R + 0.5, dist = Math.sqrt(dx * dx + dy * dy), i = (y * W + x) * 4;
+            if (dist > R) { d[i + 3] = 0; continue; }
+            const h = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
+            const [r, g, b] = hsv2rgb(h, dist / R, cw.v);
+            d[i] = r; d[i + 1] = g; d[i + 2] = b; d[i + 3] = dist > R - 1 ? Math.round(255 * (R - dist)) : 255;
+        }
+        ctx.putImageData(img, 0, 0);
+    }
+    function syncWheel(redraw) {
+        if (!cw) return;
+        if (redraw) drawWheel();
+        const wrap = document.getElementById('hkp-cw-wheel-wrap'), R = wrap.clientWidth / 2;
+        const knob = document.getElementById('hkp-cw-knob'), ang = cw.h * Math.PI / 180;
+        knob.style.left = (R + Math.cos(ang) * cw.s * R) + 'px';
+        knob.style.top = (R + Math.sin(ang) * cw.s * R) + 'px';
+        const [r, g, b] = hsv2rgb(cw.h, cw.s, 1), [r2, g2, b2] = hsv2rgb(cw.h, cw.s, cw.v);
+        const full = 'rgb(' + Math.round(r) + ',' + Math.round(g) + ',' + Math.round(b) + ')';
+        const cur = 'rgb(' + Math.round(r2) + ',' + Math.round(g2) + ',' + Math.round(b2) + ')';
+        document.querySelector('#hkp-cw-val .hkp-cw-fill').style.background = 'linear-gradient(90deg, #000, ' + full + ')';
+        document.querySelector('#hkp-cw-alpha .hkp-cw-fill').style.background = 'linear-gradient(90deg, rgba(0,0,0,0), ' + cur + ')';
+        document.querySelector('#hkp-cw-val .hkp-cw-thumb').style.left = (cw.v * 100) + '%';
+        document.querySelector('#hkp-cw-alpha .hkp-cw-thumb').style.left = (cw.a * 100) + '%';
+        const hex = cwHex(), ci = colourInfo(hex);
+        swatchBg(document.getElementById('hkp-cw-new'), ci.css);
+        const inp = document.getElementById('hkp-cw-hex');
+        if (document.activeElement !== inp) inp.value = hex.toUpperCase();
+        document.getElementById('hkp-cw-vval').textContent = Math.round(cw.v * 100) + '%';
+        document.getElementById('hkp-cw-aval').textContent = Math.round(cw.a * 100) + '%';
+    }
+    function renderWheelSquares() {
+        const bar = document.getElementById('hkp-cw-squares');
+        if (!bar || !cw) return;
+        bar.innerHTML = '';
+        swatchList().forEach((hex, i) => {
+            const sw = document.createElement('div');
+            sw.className = 'hkp-swatch' + (cw.slot === i + 1 ? ' selected' : '');
+            swatchBg(sw, colourInfo(hex).css);
+            sw.title = 'Square ' + (i + 1) + ': ' + hex.toUpperCase();
+            sw.onclick = () => { cw.slot = i + 1; renderWheelSquares(); syncSaveBtn(); };
+            bar.appendChild(sw);
+        });
+        syncSaveBtn();
+    }
+    function syncSaveBtn() {
+        const b = document.getElementById('hkp-cw-save');
+        if (b) { b.disabled = !cw || !cw.slot; b.textContent = cw && cw.slot ? 'Save into square ' + cw.slot : 'Pick a square to save into'; }
+    }
+    function setWheelColour(hex) {
+        const c = parseHex8(hex) || parseHex8('#c9a45c');
+        const hsv = rgb2hsv(c.r, c.g, c.b);
+        cw.h = hsv.h; cw.s = hsv.s; cw.v = hsv.v; cw.a = c.a;
+    }
+    function openColourWheel() {
+        const slot = colorMode && colorMode.swatchIdx > 0 ? colorMode.swatchIdx : null;
+        const start = colorMode && typeof colorMode.colour === 'string' ? colorMode.colour : '#c9a45cff';
+        cw = { h: 0, s: 0, v: 1, a: 1, old: start, slot };
+        setWheelColour(start);
+        swatchBg(document.getElementById('hkp-cw-old'), colourInfo(start).css);
+        document.getElementById('hkp-modal-color').classList.remove('hkp-hidden');
+        renderWheelSquares();
+        requestAnimationFrame(() => syncWheel(true));
+    }
+    function closeColourWheel() {
+        cw = null;
+        document.getElementById('hkp-modal-color').classList.add('hkp-hidden');
+    }
+    function dragOn(el, fn) {
+        el.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            e.preventDefault();
+            fn(e);
+            const mv = (ev) => fn(ev);
+            const up = () => { document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', up); };
+            document.addEventListener('mousemove', mv);
+            document.addEventListener('mouseup', up);
+        });
+    }
+    function attachWheelHandlers() {
+        const wrap = document.getElementById('hkp-cw-wheel-wrap');
+        if (!wrap) return;
+        dragOn(wrap, (e) => {
+            if (!cw) return;
+            const r = wrap.getBoundingClientRect(), R = r.width / 2;
+            const dx = e.clientX - r.left - R, dy = e.clientY - r.top - R;
+            cw.h = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
+            cw.s = Math.min(1, Math.sqrt(dx * dx + dy * dy) / R);
+            syncWheel(false);
+        });
+        const track = (id, key) => {
+            const t = document.getElementById(id);
+            dragOn(t, (e) => {
+                if (!cw) return;
+                const r = t.getBoundingClientRect();
+                cw[key] = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+                syncWheel(key === 'v');
+            });
+        };
+        track('hkp-cw-val', 'v');
+        track('hkp-cw-alpha', 'a');
+    }
+    function cwHexInput(v) {
+        if (!cw) return;
+        let h = String(v || '').trim();
+        if (!h.startsWith('#')) h = '#' + h;
+        if (!parseHex8(h)) return;
+        setWheelColour(h);
+        syncWheel(true);
+    }
+    function cwSave() {
+        if (!cw || !cw.slot) return;
+        const list = swatchList();
+        list[cw.slot - 1] = cwHex();
+        state.swatches = list;
+        save();
+        renderSwatches();
+        renderWheelSquares();
+        flashStatus('Saved into square ' + cw.slot + '.', 2500);
+    }
+    function cwUse() {
+        if (!cw) return;
+        const hex = cwHex(), slot = cw.slot && swatchList()[cw.slot - 1] === hex ? cw.slot : -1;
+        closeColourWheel();
+        startColourMode(slot, hex);
+    }
     let stackStep = 4;
     function escHtml(s) {
         return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -338,7 +548,7 @@
         if (!cols.length) { el.style.removeProperty('--st'); el.style.boxShadow = ''; return; }
         const s = stackStep, sh = [], dotMode = document.body.classList.contains('hkp-color-dot');
         cols.forEach((c, i) => {
-            const d = s * (i + 1), fill = (!dotMode && PALETTE[c] && PALETTE[c].hex) || '#3b3428';
+            const ci = dotMode ? null : colourInfo(c), d = s * (i + 1), fill = (ci && ci.solid) || '#3b3428';
             sh.push(d + 'px ' + d + 'px 0 -1px ' + fill, d + 'px ' + d + 'px 0 0 rgba(6,5,4,.95)');
         });
         el.style.setProperty('--st', (s * cols.length) + 'px');
@@ -418,8 +628,8 @@
         document.querySelectorAll('#hkp-mouse-lines [data-ml="' + keyId + '"]').forEach(l => l.classList.toggle('hkp-lit', on));
     }
     function colourChip(idx) {
-        const p = PALETTE[idx];
-        return '<span class="hkp-chip"' + (p && p.hex ? ' style="background:' + p.hex + '"' : '') + '></span>';
+        const ci = colourInfo(idx);
+        return '<span class="hkp-chip"' + (ci ? ' style="background:' + ci.css + '"' : '') + '></span>';
     }
     function renderInfo() {
         const box = document.getElementById('hkp-info');
@@ -848,13 +1058,7 @@
         }
         if (keyData && keyData.label) { lbl.textContent = keyData.label; lbl.classList.remove('hkp-empty'); }
         else { lbl.textContent = ''; lbl.classList.add('hkp-empty'); }
-        const colorIdx = resolveColor(keyData, activeProf);
-        el.dataset.color = String(colorIdx);
-        const p = PALETTE[colorIdx];
-        if (p && p.lum === 'light') el.dataset.lum = 'light'; else delete el.dataset.lum;
-        el.style.setProperty('--kbg', (p && p.hex) || '#1e1b16');
-        const dotEl = el.querySelector('.hkp-dot');
-        if (dotEl) dotEl.style.background = (p && p.hex) || '';
+        paintKeyColour(el, resolveColor(keyData, activeProf), dim);
         if (!REMOTE) applyStack(el, otherLayers(keyId, activeLayer));
         fitLabel(lbl);
     }
@@ -890,18 +1094,12 @@
         if (keyData && keyData.label) { lbl.textContent = keyData.label; lbl.classList.remove('hkp-empty'); }
         else { lbl.textContent = ''; lbl.classList.add('hkp-empty'); }
 
-        const colorIdx = resolveColor(keyData, activeProf);
-        el.dataset.color = String(colorIdx);
-        const p = PALETTE[colorIdx];
-        if (p && p.lum === 'light') el.dataset.lum = 'light'; else delete el.dataset.lum;
-        el.style.setProperty('--kbg', (p && p.hex) || '#1e1b16');
-        const dotEl = el.querySelector('.hkp-dot');
-        if (dotEl) dotEl.style.background = (p && p.hex) || '';
+        const ci = paintKeyColour(el, resolveColor(keyData, activeProf), dim);
         if (!REMOTE) applyStack(el, otherLayers(keyId, activeLayer));
         fitLabel(lbl);
         // the drawing's button takes the colour too
         const z = document.querySelector('.hkp-mouse-svg [data-mz="' + keyId + '"]');
-        if (z) z.style.fill = p && p.hex ? p.hex : '';
+        if (z) z.style.fill = ci ? ci.solid : '';
         if (z) z.classList.toggle('hkp-bound', !!(keyData && keyData.label));
     }
 
@@ -1118,9 +1316,9 @@
         // A mod's key: the colour is the user's override for that source (clear = the mod's own).
         if (layer === 'default' && state.activeProfile === 'DEFAULT' && (extByKey[keyId] || []).length) {
             extByKey[keyId].forEach(([src]) => {
-                const c = customFor(src, colorMode.swatchIdx !== 0);
+                const c = customFor(src, !!colorMode.colour);
                 if (!c) return;
-                if (colorMode.swatchIdx === 0) delete c.color; else c.color = colorMode.swatchIdx;
+                if (!colorMode.colour) delete c.color; else c.color = colorMode.colour;
             });
             refreshAll(); save();
             return;
@@ -1129,15 +1327,15 @@
         const entry = state.keys[keyId].layers[layer];
         if (state.activeProfile === 'DEFAULT') {
             // Set the default (base) color for this layer
-            entry.color = colorMode.swatchIdx;
+            if (colorMode.colour) entry.color = colorMode.colour; else delete entry.color;
         } else {
             // Set a profile-specific color override — only applies while this profile is active
             if (!entry.profileColors) entry.profileColors = {};
-            if (colorMode.swatchIdx === 0) {
+            if (!colorMode.colour) {
                 // Clearing the profile override (revert to default color under this profile)
                 delete entry.profileColors[state.activeProfile];
             } else {
-                entry.profileColors[state.activeProfile] = colorMode.swatchIdx;
+                entry.profileColors[state.activeProfile] = colorMode.colour;
             }
         }
         refreshAll(); save();
@@ -1346,19 +1544,25 @@
     function renderSwatches() {
         const bar = document.getElementById('hkp-swatches');
         bar.innerHTML = '';
-        for (const p of PALETTE) {
+        const list = [0].concat(swatchList());
+        list.forEach((hex, idx) => {
             const sw = document.createElement('div');
-            sw.className = 'hkp-swatch';
-            sw.style.background = p.hex || 'repeating-linear-gradient(45deg, #333, #333 3px, #222 3px, #222 6px)';
-            sw.title = p.hex || 'Clear color';
-            sw.onclick = () => pickSwatch(p.idx);
+            sw.className = 'hkp-swatch' + (colorMode && colorMode.swatchIdx === idx ? ' selected' : '');
+            swatchBg(sw, idx ? colourInfo(hex).css : null);
+            sw.title = idx ? 'Square ' + idx + ': ' + hex.toUpperCase() : 'Clear colour';
+            sw.onclick = () => pickSwatch(idx);
             bar.appendChild(sw);
-        }
+        });
     }
     function pickSwatch(idx) {
         if (moveMode) exitMoveMode();
         if (colorMode && colorMode.swatchIdx === idx) { exitColorMode(); return; }
-        colorMode = { swatchIdx: idx };
+        startColourMode(idx, idx ? swatchList()[idx - 1] : 0);
+    }
+    // colour mode paints `colour` (0 = clear); swatchIdx = its square, -1 = a wheel colour in no square
+    function startColourMode(idx, colour) {
+        if (moveMode) exitMoveMode();
+        colorMode = { swatchIdx: idx, colour };
         document.body.classList.add('hkp-color-mode');
         document.getElementById('hkp-swatch-bar').classList.add('hkp-active');
         [...document.querySelectorAll('#hkp-swatches .hkp-swatch')].forEach((sw, i) =>
@@ -1400,7 +1604,7 @@
         if (colorMode) {
             const forProf = state.activeProfile !== 'DEFAULT'
                 ? ` (applies to "${state.activeProfile}" profile only)` : '';
-            el.textContent = colorMode.swatchIdx === 0
+            el.textContent = !colorMode.colour
                 ? 'Clear color — click keys to remove' + forProf + '. Click swatch again to exit.'
                 : 'Color mode — click keys to apply' + forProf + '. Click swatch again or press ESC to exit.';
             el.classList.remove('hkp-swatch-label-tap');
@@ -1507,7 +1711,7 @@
     function colorStyle() { return state.settings.colorStyle === 'dot' ? 'dot' : 'fill'; }
     function applyColorStyle() {
         document.body.classList.toggle('hkp-color-dot', colorStyle() === 'dot');
-        document.querySelectorAll('.hkp-stacked').forEach(paintStack);
+        refreshAll();
     }
     function syncColorStyle() {
         const f = document.getElementById('hkp-cs-fill'), d = document.getElementById('hkp-cs-dot');
@@ -1781,6 +1985,7 @@
                 e.preventDefault();
                 // ESC/Tab cascade: close whatever is layered on top first.
                 if (pickModal) { closePickModal(); return; }
+                if (!document.getElementById('hkp-modal-color').classList.contains('hkp-hidden'))   { closeColourWheel(); return; }
                 if (!document.getElementById('hkp-modal-confirm').classList.contains('hkp-hidden')) { confirmCancel(); return; }
                 if (!document.getElementById('hkp-modal-edit').classList.contains('hkp-hidden'))    { cancelEdit(); return; }
                 if (!document.getElementById('hkp-modal-profile').classList.contains('hkp-hidden')) { cancelProfile(); return; }
@@ -2253,7 +2458,7 @@
         const layer = currentLayerId();
         const caption = KEY_CAPTION[keyId] || keyId;
         const own = getKeyLayer(keyId, layer);
-        pickModal = { keyId, dik, layer, color: (own && own.color) || 6 };
+        pickModal = { keyId, dik, layer, color: (own && own.color) || swatchList()[5] };
         document.getElementById('hkp-pick-title').textContent = 'Bind ' + caption +
             (layer !== 'default' ? '  (layer: ' + layerCaption(layer) + ')' : '');
         document.getElementById('hkp-pick-body').textContent = pick.manual
@@ -2278,14 +2483,14 @@
     function renderPickSwatches() {
         const bar = document.getElementById('hkp-pick-swatches');
         bar.innerHTML = '';
-        for (const p of PALETTE) {
+        [0].concat(swatchList()).forEach((hex, idx) => {
             const sw = document.createElement('div');
-            sw.className = 'hkp-swatch' + (pickModal && pickModal.color === p.idx ? ' selected' : '');
-            sw.style.background = p.hex || 'repeating-linear-gradient(45deg, #333, #333 3px, #222 3px, #222 6px)';
-            sw.title = p.hex || 'No colour';
-            sw.onclick = () => { if (pickModal) { pickModal.color = p.idx; renderPickSwatches(); } };
+            sw.className = 'hkp-swatch' + (pickModal && pickModal.color === hex ? ' selected' : '');
+            swatchBg(sw, idx ? colourInfo(hex).css : null);
+            sw.title = idx ? hex.toUpperCase() : 'No colour';
+            sw.onclick = () => { if (pickModal) { pickModal.color = hex; renderPickSwatches(); } };
             bar.appendChild(sw);
-        }
+        });
     }
     function closePickModal() {
         pickModal = null;
@@ -2344,7 +2549,7 @@
                     }
                     if (!Object.keys(k.layers).length) delete state.keys[keyId];
                 }
-                applyColorStyle(); renderProfiles(); refreshAll(); updateModifierBadge(); applyTapModeBg(); applyLabelSize(); applyPanelScale(); applyPanelOpacity(); applyFont(); syncFontButton(); updateSwatchBarLabel();
+                renderSwatches(); applyColorStyle(); renderProfiles(); refreshAll(); updateModifierBadge(); applyTapModeBg(); applyLabelSize(); applyPanelScale(); applyPanelOpacity(); applyFont(); syncFontButton(); updateSwatchBarLabel();
                 if (settingsOpen) syncSettingsInputs();
                 // Tell the DLL about the persisted toggle key so its input
                 // sink knows which key opens the panel. (Replaces what the old
@@ -2386,6 +2591,7 @@
             });
         },
         toggleSettings, setToggleEnabled, startBindToggleKey, exitColorMode, cycleTapMode, setLabelSize, setColorStyle,
+        openColourWheel, closeColourWheel, cwSave, cwUse, cwHexInput,
         layout: () => layoutKeyboard(),
         setPanelScale, previewPanelScale, setPanelOpacity,
         setFonts, toggleFontDD, pickFont,
