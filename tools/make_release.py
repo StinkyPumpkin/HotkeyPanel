@@ -143,6 +143,8 @@ def main():
         copy_tree(VIEWS, os.path.join(core, *parts))
     copy_tree(ICONS, os.path.join(core, 'Icons'))
     shutil.copy2(os.path.join(ROOT, 'README.md'), os.path.join(core, NAME + 'README.md'))
+    # GPL-3.0 text with the files (named for the mod: a plain LICENSE at the Data root clashes with other mods' in MO2)
+    shutil.copy2(os.path.join(ROOT, 'LICENSE'), os.path.join(core, NAME + ' LICENSE.txt'))
     gk = os.path.join(main_dir, 'gkeys')
     os.makedirs(os.path.join(gk, 'SKSE', 'Plugins'))
     shutil.copy2(dlls['GKeysInputBridge.dll'], os.path.join(gk, 'SKSE', 'Plugins'))
@@ -159,6 +161,7 @@ def main():
 
     # --- the offline editor (manual download) ---
     copy_tree(EDITOR, os.path.join(ed_dir, 'HotkeyPanelEditor'))
+    shutil.copy2(os.path.join(ROOT, 'LICENSE'), os.path.join(ed_dir, 'HotkeyPanelEditor', 'LICENSE.txt'))
     with open(os.path.join(ed_dir, 'Hotkey Panel Offline Editor - install.txt'), 'w', encoding='utf-8', newline='\r\n') as f:
         f.write(EDITOR_TXT.format(ver=ver))
 
