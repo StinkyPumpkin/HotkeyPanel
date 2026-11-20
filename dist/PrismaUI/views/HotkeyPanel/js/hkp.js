@@ -2498,6 +2498,11 @@
                 const t0 = e.target;
                 if (!(t0 && (t0.tagName === 'INPUT' || t0.tagName === 'TEXTAREA'))) {
                     e.preventDefault();
+                    // --Claude 2026-11-20 (in game: a quick reopen closed itself 32 ms later): the press that
+                    // OPENED the panel reaches the page as well, before or just after HKP.show(). Not a close then:
+                    // the panel is still hidden here, or opened under half a second ago, or it is the key's repeat.
+                    const root = document.getElementById('hkp-root');
+                    if (e.repeat || root.classList.contains('hkp-hidden') || Date.now() - shownAt < 500) return;
                     dispatchToBridge('hkpCloseUI', '1');
                     document.getElementById('hkp-root').classList.add('hkp-hidden');
                     return;
@@ -2542,6 +2547,7 @@
         }
         return code || '';
     }
+    let shownAt = 0;   // when HKP.show() last ran (Date.now())
     function isToggleKeyEvent(e) {
         const want = String(state.settings.toggleKey || '');
         if (!want || state.settings.toggleKeyEnabled === false) return false;
@@ -3184,6 +3190,7 @@
             } catch (err) { console.error('HKP.loadState failed', err); }
         },
         show() {
+            shownAt = Date.now();
             endGeomDrag(false);
             applyGeom();
             document.getElementById('hkp-root').classList.remove('hkp-hidden');
