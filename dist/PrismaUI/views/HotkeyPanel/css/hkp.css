@@ -1107,3 +1107,7 @@ body.hkp-color-dot .hkp-key.hkp-dim, body.hkp-color-dot .hkp-m-input.hkp-dim { b
 /* --Claude 2026-11-20: the title sits in the keyboard's top-right corner, next to the close button */
 .hkp-kb-title { position: absolute; top: 10px; right: 56px; height: 34px; display: flex; align-items: center;
     z-index: 8; pointer-events: none; white-space: nowrap; }
+
+/* --Claude 2026-11-20 in-game test: a pointed-at mouse button with no colour of its own lights gold */
+.hkp-mz.hkp-lit { stroke-width: 2.5; }
+.hkp-mz.hkp-lit:not(.hkp-tinted) { fill: rgba(232, 204, 142, 0.45) !important; fill-opacity: 1; }

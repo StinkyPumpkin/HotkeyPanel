@@ -309,6 +309,10 @@
     // copies its colour onto the key, so changing a square later never recolours painted keys.
     // ---------------------------------------------------------------
     const KEY_BASE = [30, 27, 22];   // #1e1b16, the plain key under a see-through colour
+    function shade(hex, k) {   // '#rrggbb' darkened (k < 1)
+        const c = parseHex8(hex);
+        return c ? '#' + hex2(c.r * k) + hex2(c.g * k) + hex2(c.b * k) : hex;
+    }
     function hex2(v) { return Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0'); }
     function parseHex8(h) {
         const m = /^#?([0-9a-f]{6})([0-9a-f]{2})?$/i.exec(String(h || '').trim());
@@ -548,7 +552,7 @@
         if (!cols.length) { el.style.removeProperty('--st'); el.style.boxShadow = ''; return; }
         const s = stackStep, sh = [], dotMode = document.body.classList.contains('hkp-color-dot');
         cols.forEach((c, i) => {
-            const ci = dotMode ? null : colourInfo(c), d = s * (i + 1), fill = (ci && ci.solid) || '#3b3428';
+            const ci = dotMode ? null : colourInfo(c), d = s * (i + 1), fill = ci ? shade(ci.solid, 0.62) : '#3b3428';
             sh.push(d + 'px ' + d + 'px 0 -1px ' + fill, d + 'px ' + d + 'px 0 0 rgba(6,5,4,.95)');
         });
         el.style.setProperty('--st', (s * cols.length) + 'px');
@@ -993,14 +997,23 @@
         }
         const prof = state.activeProfile;
         if (!prof || prof === 'DEFAULT' || !main.offsetWidth) { svg.innerHTML = ''; return; }
-        const mr = main.getBoundingClientRect();
-        const gap = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--hkp-key-gap')) || 4;
-        const pad = gap / 2 + 1.5, rd = v => Math.round(v * 2) / 2;
+        const mr = main.getBoundingClientRect(), zk = main.offsetWidth ? mr.width / main.offsetWidth : 1;
+        // --Claude 2026-11-20 in-game test: neighbours were outlined one by one there, so the reach comes from
+        // the gap actually measured between Q|W and Q/A (never under 6 px)
+        const gapOf = (a, b, horiz) => {
+            const A = document.querySelector('.hkp-key[data-key-id="' + a + '"]'), B = document.querySelector('.hkp-key[data-key-id="' + b + '"]');
+            if (!A || !B) return 0;
+            const ra = A.getBoundingClientRect(), rb = B.getBoundingClientRect(), sa = (A._stackCols || []).length * stackStep * zk;
+            return horiz ? rb.left - (ra.right + sa) : rb.top - (ra.bottom + sa);
+        };
+        const gap = Math.max(gapOf('KeyQ', 'KeyW', true), gapOf('KeyQ', 'KeyA', false), 0) / zk;
+        const pad = Math.max(6, gap / 2 + 2), rd = v => Math.round(v * 2) / 2;
         const rects = [];
         document.querySelectorAll('.hkp-key, .hkp-m-input').forEach(el => {
             if (el.classList.contains('hkp-dim') || el.classList.contains('hkp-reserved') || !el.offsetWidth) return;
             const r = el.getBoundingClientRect(), st = (el._stackCols || []).length * stackStep;
-            rects.push([rd(r.left - mr.left - pad), rd(r.top - mr.top - pad), rd(r.right - mr.left + st + pad), rd(r.bottom - mr.top + st + pad)]);
+            const L = (r.left - mr.left) / zk, T = (r.top - mr.top) / zk, R = (r.right - mr.left) / zk, B = (r.bottom - mr.top) / zk;
+            rects.push([rd(L - pad), rd(T - pad), rd(R + st + pad), rd(B + st + pad)]);
         });
         if (!rects.length) { svg.innerHTML = ''; return; }
         const xs = [...new Set(rects.flatMap(r => [r[0], r[2]]))].sort((a, b) => a - b);
@@ -1101,6 +1114,7 @@
         const z = document.querySelector('.hkp-mouse-svg [data-mz="' + keyId + '"]');
         if (z) z.style.fill = ci ? ci.solid : '';
         if (z) z.classList.toggle('hkp-bound', !!(keyData && keyData.label));
+        if (z) z.classList.toggle('hkp-tinted', !!ci);
     }
 
     // ---------------------------------------------------------------
@@ -1544,12 +1558,14 @@
     function renderSwatches() {
         const bar = document.getElementById('hkp-swatches');
         bar.innerHTML = '';
-        const list = [0].concat(swatchList());
-        list.forEach((hex, idx) => {
+        // --Claude 2026-11-20: Clear is the LAST box, so the Nth box is square N here and in the wheel
+        const list = swatchList().map((h, i) => [h, i + 1]).concat([[0, 0]]);
+        list.forEach(([hex, idx]) => {
             const sw = document.createElement('div');
             sw.className = 'hkp-swatch' + (colorMode && colorMode.swatchIdx === idx ? ' selected' : '');
             swatchBg(sw, idx ? colourInfo(hex).css : null);
             sw.title = idx ? 'Square ' + idx + ': ' + hex.toUpperCase() : 'Clear colour';
+            sw.dataset.idx = String(idx);
             sw.onclick = () => pickSwatch(idx);
             bar.appendChild(sw);
         });
@@ -1565,8 +1581,8 @@
         colorMode = { swatchIdx: idx, colour };
         document.body.classList.add('hkp-color-mode');
         document.getElementById('hkp-swatch-bar').classList.add('hkp-active');
-        [...document.querySelectorAll('#hkp-swatches .hkp-swatch')].forEach((sw, i) =>
-            sw.classList.toggle('selected', i === idx));
+        [...document.querySelectorAll('#hkp-swatches .hkp-swatch')].forEach(sw =>
+            sw.classList.toggle('selected', Number(sw.dataset.idx) === idx));
         updateSwatchBarLabel();
     }
 
@@ -2483,7 +2499,7 @@
     function renderPickSwatches() {
         const bar = document.getElementById('hkp-pick-swatches');
         bar.innerHTML = '';
-        [0].concat(swatchList()).forEach((hex, idx) => {
+        swatchList().map((h, i) => [h, i + 1]).concat([[0, 0]]).forEach(([hex, idx]) => {
             const sw = document.createElement('div');
             sw.className = 'hkp-swatch' + (pickModal && pickModal.color === hex ? ' selected' : '');
             swatchBg(sw, idx ? colourInfo(hex).css : null);
