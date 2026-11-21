@@ -1687,7 +1687,7 @@
             const e = state.external[src];
             const c = customFor(src, !!val && !!e && val !== e.label);
             if (c) { if (val && e && val !== e.label) c.label = val; else delete c.label; }
-            // --Claude 2026-10-01 (user renamed a scanned key, the panel kept the old name until
+            // --Claude 2026-10-01 (a renamed scanned key kept its old name until
             // Reset key): the key's own name hides config-file keys, so renaming one of them
             // replaces that name. Colour and profiles stay.
             if (val && e && e.key && src.startsWith('SCAN:')) {
@@ -3253,7 +3253,7 @@
             // Stop the click event so its mouseup doesn't propagate to the
             // game world after the BlockerMenu pops. Without this, LMB-up
             // can leak to Skyrim and desync inputs (e.g. Power Attack /
-            // Cast Left thinks LMB is half-held), causing "lost controls"
+            // Cast Left thinks LMB is half-held), so controls seem lost
             // until the panel is reopened and closed via Tab/Esc.
             if (e) {
                 if (e.preventDefault) e.preventDefault();

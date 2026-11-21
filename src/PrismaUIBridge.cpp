@@ -39,8 +39,8 @@ static std::string g_iconsSent = "none";   // fingerprint of what the page has; 
 // closing the panel, verify PrismaUI actually released focus AND its FocusMenu, retry
 // via public API only, and if the focus/cursor state is still stuck, pulse the Console
 // open->closed once — a menu cycle forces the engine to rebuild its cursor/menu input
-// state. This automates the user's manual fix ("opening and closing the tween menu
-// fixes it") for: mouse pointer stays on screen after closing the panel.
+// state. This automates the manual fix (opening and closing a menu
+// clears it) for: mouse pointer stays on screen after closing the panel.
 namespace HKPFocusRecovery {
 namespace {
     using namespace std::chrono_literals;
@@ -87,7 +87,7 @@ namespace {
         }
     }
 
-    // --Claude 2026-09-28 (user: "Hotkey Panel opens the console every time"): the panel can be
+    // --Claude 2026-09-28 (the console opened on every close): the panel can be
     // opened over a menu that keeps its own cursor - the MCM / Journal, and now the MCM key picker
     // opens it there on purpose. Closing it then leaves the Cursor Menu open because THAT menu owns
     // it, which the check below read as "cursor stuck" and answered with a console pulse, every
@@ -159,7 +159,7 @@ namespace {
             Scheduler::Get().After(80ms, [gen, attempt]() { VerifyCleanup(gen, attempt + 1, true); });
             return;
         }
-        // --Claude 2026-10-01 (user: "on every close the console pops open for a second"): the
+        // --Claude 2026-10-01 (a console flash on every close): the
         // pulse also fired when focus was merely slow to let go at the 90 ms check and everything
         // was clean by now - that was every "focus was stale at close" pulse in the log. Pulse
         // only for something still stuck at THIS check.

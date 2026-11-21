@@ -59,7 +59,7 @@ private:
     // injected ButtonEvent and the GKeyDown event don't both toggle.
     static bool IsGKey(std::uint32_t code) { return (code >= 100 && code <= 110) || code == 118; }
 
-    // --Claude 2026-10-12: a "Shift+" toggle (the user's Shift+G6) only fires with Shift held,
+    // --Claude 2026-10-12: a "Shift+" toggle (e.g. Shift+G6) only fires with Shift held,
     // which leaves the bare key to another mod (G6 = FollowerUI).
     bool ToggleModifierOk() const;
 
