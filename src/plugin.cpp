@@ -1,4 +1,5 @@
 #include "PrismaUIBridge.h"
+#include "KeyPress.h"
 #include "InputHandler.h"
 #include "BlockerMenu.h"
 #include "PickMode.h"
@@ -32,6 +33,7 @@ namespace {
             BlockerMenu::Register();
             PrismaUIBridge::RegisterConsoleGuard();
             PickMode::Register();
+            KeyPress::InstallPollHook();   // --Claude 2026-11-21: fired keys go out inside the device poll
             break;
         }
     }

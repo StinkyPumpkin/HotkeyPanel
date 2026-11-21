@@ -7,6 +7,8 @@
 
 #include <Windows.h>
 #include <atomic>
+#include <deque>
+#include <mutex>
 #include <chrono>
 #include <memory>
 #include <string>
@@ -133,6 +135,60 @@ namespace {
     constexpr int kMaxGateMs       = 4000;
     constexpr int kMaxOverlayWaitMs = 2500;   // Magelight's fade-out menu (InputIsLive)
 
+    // One edge into the engine's button state machine, logged with what landed in this frame's input queue.
+    void ApplyEdge(RE::BSInputDevice* a_dev, std::uint32_t a_button, const Edge& a_edge, const char* a_where) {
+        auto* q = RE::BSInputEventQueue::GetSingleton();
+        const std::uint32_t before = q ? q->buttonEventCount : 0u;
+        SetButtonState(a_dev, a_button, a_edge.dt, a_edge.wasDown, a_edge.isDown);
+        const std::uint32_t after = q ? q->buttonEventCount : 0u;
+        SKSE::log::info("KeyPress: {} of code {} given to the engine {} - button events in this frame's queue {} -> {}{}; game window {}",
+                        !a_edge.wasDown ? "press" : (a_edge.isDown ? "hold" : "release"), a_edge.code, a_where, before, after,
+                        after == before ? " (NOT added)" : "", GameInFront() ? "in front" : "NOT in front");
+    }
+
+    // --Claude 2026-11-21 (in game 3 of 5 fired keys lost an edge - added to the input queue from a task at some point
+    // of the frame, then never passed to any input sink). The edges are applied INSIDE the keyboard's / mouse's own
+    // Poll (vtable slot 2), right after the engine's: the same place GKeysInputBridge emits F13-F24 from, which has
+    // never lost a key. The hook chains with any other one on that slot (each calls the one it replaced).
+    using PollFn = void(RE::BSInputDevice*, float);
+    std::mutex          g_pendMx;
+    std::deque<Edge>    g_pending;       // edges the next poll of their device applies, in order
+    std::atomic<bool>   g_pollHooked{ false };
+    PollFn*             g_keyboardPoll = nullptr;
+    PollFn*             g_mousePoll = nullptr;
+
+    void ApplyPending(RE::BSInputDevice* a_dev, bool a_mouse) {
+        std::vector<Edge> mine;
+        {
+            std::lock_guard lk(g_pendMx);
+            if (g_pending.empty()) return;
+            for (auto it = g_pending.begin(); it != g_pending.end();) {
+                if ((it->code >= kMouseBase) == a_mouse) { mine.push_back(*it); it = g_pending.erase(it); }
+                else ++it;
+            }
+        }
+        for (const auto& e : mine)
+            ApplyEdge(a_dev, a_mouse ? e.code - kMouseBase : e.code, e, "inside the poll");
+    }
+    void KeyboardPoll(RE::BSInputDevice* a_dev, float a_dt) {
+        g_keyboardPoll(a_dev, a_dt);
+        ApplyPending(a_dev, false);
+    }
+    void MousePoll(RE::BSInputDevice* a_dev, float a_dt) {
+        g_mousePoll(a_dev, a_dt);
+        ApplyPending(a_dev, true);
+    }
+    bool HookPoll(RE::BSInputDevice* a_dev, PollFn* a_thunk, PollFn*& a_orig, const char* a_name) {
+        if (!a_dev) return false;
+        auto** vtable = *reinterpret_cast<void***>(a_dev);
+        if (vtable[2] == reinterpret_cast<void*>(a_thunk)) return true;
+        a_orig = reinterpret_cast<PollFn*>(vtable[2]);
+        REL::safe_write(reinterpret_cast<std::uintptr_t>(&vtable[2]), reinterpret_cast<std::uintptr_t>(a_thunk));
+        SKSE::log::info("KeyPress: {} poll hooked (previous 0x{:X}) - fired keys go out inside the poll", a_name,
+                        reinterpret_cast<std::uintptr_t>(a_orig));
+        return true;
+    }
+
     void Worker(std::shared_ptr<std::vector<Edge>> a_script, bool a_gameplay, std::uint32_t a_code) {
         using namespace std::chrono_literals;
 
@@ -176,22 +232,18 @@ namespace {
                 std::this_thread::sleep_for(std::chrono::milliseconds(e.delayMs));
             }
             Edge edge = e;
-            if (auto* task = SKSE::GetTaskInterface()) {
+            // --Claude 2026-11-21: handed to the device's own poll, which applies it while the engine
+            // builds this frame's input (PollHook below). Sent from a task at any point of the frame instead, 3 of 5
+            // keys lost an edge: added to the queue, never passed to any input sink.
+            if (g_pollHooked.load()) {
+                std::lock_guard lk(g_pendMx);
+                g_pending.push_back(edge);
+            } else if (auto* task = SKSE::GetTaskInterface()) {
                 task->AddTask([edge]() {
                     RE::BSInputDevice* dev = nullptr;
                     std::uint32_t      button = 0;
-                    if (Resolve(edge.code, dev, button)) {
-                        // diagnostics: did the engine put a button event in this frame's input queue?
-                        auto* q = RE::BSInputEventQueue::GetSingleton();
-                        const std::uint32_t before = q ? q->buttonEventCount : 0u;
-                        SetButtonState(dev, button, edge.dt, edge.wasDown, edge.isDown);
-                        const std::uint32_t after = q ? q->buttonEventCount : 0u;
-                        SKSE::log::info("KeyPress: {} of code {} given to the engine - button events in this frame's queue {} -> {}{}; game window {}",
-                                        !edge.wasDown ? "press" : (edge.isDown ? "hold" : "release"), edge.code, before, after,
-                                        after == before ? " (NOT added)" : "", GameInFront() ? "in front" : "NOT in front");
-                    } else {
-                        SKSE::log::warn("KeyPress: cannot resolve code {} to a device button", edge.code);
-                    }
+                    if (Resolve(edge.code, dev, button)) ApplyEdge(dev, button, edge, "from a task (no poll hook)");
+                    else SKSE::log::warn("KeyPress: cannot resolve code {} to a device button", edge.code);
                 });
             }
         }
@@ -287,6 +339,20 @@ void KeyPress::Fire(const std::vector<std::uint32_t>& a_mods, std::uint32_t a_co
                     a_waitForGameplay ? "input to be live" : "HKP's own menus only (menus stay open)");
 
     std::thread(Worker, script, a_waitForGameplay, a_code).detach();
+}
+
+// Main thread, at kDataLoaded: both device polls hooked, or fired keys keep the old task path (logged).
+void KeyPress::InstallPollHook() {
+    auto* mgr = RE::BSInputDeviceManager::GetSingleton();
+    if (!mgr) {
+        SKSE::log::warn("KeyPress: no input device manager - fired keys go out from tasks");
+        return;
+    }
+    const bool kb = HookPoll(mgr->GetKeyboard(), &KeyboardPoll, g_keyboardPoll, "keyboard");
+    const bool ms = HookPoll(mgr->GetMouse(), &MousePoll, g_mousePoll, "mouse");
+    if (kb && ms) g_pollHooked.store(true);
+    else SKSE::log::warn("KeyPress: keyboard {} / mouse {} poll not hooked - fired keys go out from tasks",
+                         kb ? "ok" : "missing", ms ? "ok" : "missing");
 }
 
 // --Claude 2026-11-21 diagnostics: InputHandler hands every button event over; the one we fired is logged.

@@ -50,6 +50,9 @@ namespace KeyPress {
     // only on an empty id; an unrecognised modifier name is skipped and reported.
     bool ParseLayer(const std::string& a_layerId, std::vector<std::uint32_t>& a_outMods, Tap& a_outTap);
 
+    // --Claude 2026-11-21: fired keys go out inside the keyboard / mouse device poll (call once, main thread, kDataLoaded).
+    void InstallPollHook();
+
     // --Claude 2026-11-21 diagnostics: every button event InputHandler sees; logs the fired key's press / release.
     void NoteInput(const RE::ButtonEvent* a_button);
 
