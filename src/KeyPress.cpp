@@ -80,7 +80,7 @@ namespace {
     // --Claude 2026-10-01: a tablet press while another menu is open (SLUI, Tween, an MCM) waited
     // for gameplay that never came and was dropped after 4 s - SLUI opened from the tablet could
     // not be closed from it. Without a_gameplay only HKP's own pieces must be gone.
-    bool InputIsLive(bool a_gameplay) {
+    bool InputIsLive(bool a_gameplay, bool a_waitOverlay) {
         auto* ui = RE::UI::GetSingleton();
         if (!ui) return false;
         if (ui->IsMenuOpen("HKP_Blocker")) return false;
@@ -92,6 +92,10 @@ namespace {
         // --Claude 2026-11-21 (PrismaUI check: 1 of 2 fired keys did nothing): PrismaUI's focus shell closes after
         // our blocker; a key sent before it is gone lands in menu mode
         if (ui->IsMenuOpen("PrismaUI_FocusMenu")) return false;
+        // --Claude 2026-11-21 (in game 2 of 2 fired keys did nothing on Magelight): Magelight keeps its
+        // "MagelightOverlay" menu up for about a second after a page lets go, and the game does not take a key sent
+        // while it is open. Waited for while a_waitOverlay (the first 2.5 s), then ignored, in case a mod keeps it up.
+        if (a_waitOverlay && ui->IsMenuOpen("MagelightOverlay")) return false;
         return true;
     }
 
@@ -112,6 +116,7 @@ namespace {
 
     constexpr int kProbeIntervalMs = 50;
     constexpr int kMaxGateMs       = 4000;
+    constexpr int kMaxOverlayWaitMs = 2500;   // Magelight's fade-out menu (InputIsLive)
 
     void Worker(std::shared_ptr<std::vector<Edge>> a_script, bool a_gameplay) {
         using namespace std::chrono_literals;
@@ -122,9 +127,10 @@ namespace {
         bool live = false;
         while (waitedMs < kMaxGateMs) {
             g_liveProbe.store(-1, std::memory_order_relaxed);
+            const bool waitOverlay = waitedMs < kMaxOverlayWaitMs;
             if (auto* task = SKSE::GetTaskInterface()) {
-                task->AddTask([a_gameplay]() {
-                    g_liveProbe.store(InputIsLive(a_gameplay) ? 1 : 0, std::memory_order_relaxed);
+                task->AddTask([a_gameplay, waitOverlay]() {
+                    g_liveProbe.store(InputIsLive(a_gameplay, waitOverlay) ? 1 : 0, std::memory_order_relaxed);
                     g_contextTop.store(ContextTop(), std::memory_order_relaxed);
                 });
             }
