@@ -11,7 +11,7 @@ A keyboard and mouse overlay showing every hotkey of every mod. One key opens it
 - Keys of mods that are not installed stay off the panel
 - Clashes marked: two actions on one key get a red !
 - Names, colours (colour wheel, see-through, saved colours), icons and borders per key
-- Icon library: 130 pictures and 69 line icons, plus your own pictures (Icons folder)
+- Icon library: 130 pictures and 68 line icons, plus your own pictures (Icons folder)
 - Mod profiles: one glowing outline round a mod's keys
 - Modifier layers (Shift, Ctrl, any key) and tap modes (single, double, long press)
 - Hold a key (left mouse, half a second) to fire it in game
