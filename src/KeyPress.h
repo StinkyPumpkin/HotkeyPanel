@@ -9,6 +9,8 @@
 // The panel is a reminder overlay, so the keys it draws belong to OTHER mods. The
 // only way to trigger one of those is to make the game believe the key was really
 // pressed — nothing else reaches an arbitrary mod's hotkey handler.
+namespace RE { class ButtonEvent; }
+
 namespace KeyPress {
 
     // Mirrors the panel's TAP_MODES in hkp.js. The panel can label a key
@@ -47,5 +49,8 @@ namespace KeyPress {
     // "double:default", "long:AltLeft") into modifiers + tap mode. Returns false
     // only on an empty id; an unrecognised modifier name is skipped and reported.
     bool ParseLayer(const std::string& a_layerId, std::vector<std::uint32_t>& a_outMods, Tap& a_outTap);
+
+    // --Claude 2026-11-21 diagnostics: every button event InputHandler sees; logs the fired key's press / release.
+    void NoteInput(const RE::ButtonEvent* a_button);
 
 }  // namespace KeyPress

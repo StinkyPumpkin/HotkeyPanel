@@ -5,6 +5,7 @@
 #include <REL/Relocation.h>
 #include <SKSE/SKSE.h>
 
+#include <Windows.h>
 #include <atomic>
 #include <chrono>
 #include <memory>
@@ -37,6 +38,20 @@ namespace {
 
     constexpr float         kFrameDt   = 0.016f;
     constexpr std::uint32_t kMouseBase = 256;   // panel codes 256..258 = mouse 1-3
+
+    // --Claude 2026-11-21 DIAGNOSTICS ONLY (1 of 3 fired keys never reached the game's input in a test; the cause is
+    // to be found before any workaround): what Skyrim's input queue and our own input sink saw of a fired key.
+    std::atomic<std::uint32_t> g_watchCode{ 0xFFFFFFFFu };
+    std::atomic<long long>     g_watchUntilMs{ 0 };
+    std::atomic<int>           g_seenPress{ 0 }, g_seenRelease{ 0 };
+
+    long long NowMs() {
+        return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    }
+    bool GameInFront() {
+        auto* w = RE::BSGraphics::Renderer::GetCurrentRenderWindow();
+        return w && reinterpret_cast<HWND>(w->hWnd) == ::GetForegroundWindow();
+    }
 
     // One edge, with a REAL delay before it.
     //
@@ -118,7 +133,7 @@ namespace {
     constexpr int kMaxGateMs       = 4000;
     constexpr int kMaxOverlayWaitMs = 2500;   // Magelight's fade-out menu (InputIsLive)
 
-    void Worker(std::shared_ptr<std::vector<Edge>> a_script, bool a_gameplay) {
+    void Worker(std::shared_ptr<std::vector<Edge>> a_script, bool a_gameplay, std::uint32_t a_code) {
         using namespace std::chrono_literals;
 
         // Gate: poll the real condition on the main thread until input is live - on two probes in a row
@@ -152,6 +167,10 @@ namespace {
                         g_contextTop.load(std::memory_order_relaxed), typing,
                         typing > 0 ? " - Skyrim thinks a text box is in use, so the game may ignore this key" : "");
 
+        g_seenPress.store(0);
+        g_seenRelease.store(0);
+        g_watchUntilMs.store(NowMs() + 3000);
+        g_watchCode.store(a_code);
         for (const auto& e : *a_script) {
             if (e.delayMs > 0) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(e.delayMs));
@@ -162,13 +181,26 @@ namespace {
                     RE::BSInputDevice* dev = nullptr;
                     std::uint32_t      button = 0;
                     if (Resolve(edge.code, dev, button)) {
+                        // diagnostics: did the engine put a button event in this frame's input queue?
+                        auto* q = RE::BSInputEventQueue::GetSingleton();
+                        const std::uint32_t before = q ? q->buttonEventCount : 0u;
                         SetButtonState(dev, button, edge.dt, edge.wasDown, edge.isDown);
+                        const std::uint32_t after = q ? q->buttonEventCount : 0u;
+                        SKSE::log::info("KeyPress: {} of code {} given to the engine - button events in this frame's queue {} -> {}{}; game window {}",
+                                        !edge.wasDown ? "press" : (edge.isDown ? "hold" : "release"), edge.code, before, after,
+                                        after == before ? " (NOT added)" : "", GameInFront() ? "in front" : "NOT in front");
                     } else {
                         SKSE::log::warn("KeyPress: cannot resolve code {} to a device button", edge.code);
                     }
                 });
             }
         }
+        // diagnostics: what our own input sink saw of the key (it sits among the game's input sinks)
+        std::this_thread::sleep_for(std::chrono::milliseconds(400));
+        SKSE::log::info("KeyPress: code {} - our input sink saw {} press and {} release event(s){}", a_code,
+                        g_seenPress.load(), g_seenRelease.load(),
+                        g_seenPress.load() ? "" : " - the press never reached the game's input sinks");
+        g_watchCode.store(0xFFFFFFFFu);
     }
 
     // Append one press of a_code lasting a_holdMs, after a_leadMs of idle.
@@ -254,5 +286,20 @@ void KeyPress::Fire(const std::vector<std::uint32_t>& a_mods, std::uint32_t a_co
                     a_mods.size(), script->size(),
                     a_waitForGameplay ? "input to be live" : "HKP's own menus only (menus stay open)");
 
-    std::thread(Worker, script, a_waitForGameplay).detach();
+    std::thread(Worker, script, a_waitForGameplay, a_code).detach();
+}
+
+// --Claude 2026-11-21 diagnostics: InputHandler hands every button event over; the one we fired is logged.
+void KeyPress::NoteInput(const RE::ButtonEvent* a_button) {
+    const auto watch = g_watchCode.load(std::memory_order_relaxed);
+    if (!a_button || watch == 0xFFFFFFFFu || NowMs() > g_watchUntilMs.load(std::memory_order_relaxed)) return;
+    const bool mouse = watch >= kMouseBase;
+    if (a_button->device.get() != (mouse ? RE::INPUT_DEVICE::kMouse : RE::INPUT_DEVICE::kKeyboard)) return;
+    if (a_button->GetIDCode() != (mouse ? watch - kMouseBase : watch)) return;
+    if (a_button->IsDown()) {
+        if (g_seenPress.fetch_add(1) == 0) SKSE::log::info("InputHandler: the fired code {} arrived as a press", watch);
+    } else if (a_button->IsUp()) {
+        if (g_seenRelease.fetch_add(1) == 0)
+            SKSE::log::info("InputHandler: the fired code {} arrived as a release (held {:.3f} s)", watch, a_button->HeldDuration());
+    }
 }

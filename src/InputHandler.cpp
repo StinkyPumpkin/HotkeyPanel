@@ -1,6 +1,7 @@
 #include "InputHandler.h"
 #include "PrismaUIBridge.h"
 #include "PickMode.h"
+#include "KeyPress.h"
 
 #include <Windows.h>  // GetKeyState + VK_F13..VK_F24
 #include <chrono>
@@ -119,6 +120,7 @@ RE::BSEventNotifyControl InputHandler::ProcessEvent(
     // --Claude 2026-11-20: Shift (either one) as the game reports it, for ToggleModifierOk
     for (auto* evt = *a_event; evt; evt = evt->next) {
         auto* b = evt->AsButtonEvent();
+        if (b) KeyPress::NoteInput(b);   // --Claude 2026-11-21 diagnostics: a key the panel fired, seen here
         if (!b || b->device.get() != RE::INPUT_DEVICE::kKeyboard) continue;
         const auto id = b->GetIDCode();
         if (id != 0x2A && id != 0x36) continue;
