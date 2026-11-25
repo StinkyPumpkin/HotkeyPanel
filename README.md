@@ -101,4 +101,6 @@ python tools\make_release.py
 
 ## License
 
-GPL-3.0 (see LICENSE). Use, change and share it; versions you share stay GPL-3.0 with their source. Versions released before this change stay under the MIT licence they came with.
+Copyright (C) 2026 StinkyPumpkin
+
+GPL-3.0-or-later (see LICENSE): free software under the GNU General Public License, version 3 or (at your option) any later version, WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. Use, change and share it; versions you share stay GPL-3.0 with their source. Versions released before this change stay under the MIT licence they came with. Built with [CommonLibSSE-NG](https://github.com/alandtse/CommonLibSSE-NG) by alandtse (v9.1.0, GPL-3.0-or-later with the Modding Exception).
